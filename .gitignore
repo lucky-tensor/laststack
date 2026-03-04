@@ -1,0 +1,10 @@
+# Compiled object files and LLVM bitcode
+*.o
+*.bc
+
+# Compiled WebAssembly
+*.wasm
+
+# Built binaries
+laststack-server
+laststack-bench
