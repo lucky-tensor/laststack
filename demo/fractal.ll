@@ -131,7 +131,7 @@ iter_exit:
 ; @inv       buffer write range is clamped to 16 MiB; pixel_loop visits each pixel exactly once
 ; @proof     prepare block: safe_bytes64 = min(w*h*4, 16777216); pixel_loop: i in [0, safe_pixels32). QED
 ; ============================================================================
-define i32 @generate_fractal(i32 %width, i32 %height, i32 %max_iter) !pcf.pre !101 !pcf.post !102 !pcf.proof !103 !pcf.effects !104 !pcf.bind !105 {
+define i32 @generate_fractal(i32 %width, i32 %height, i32 %max_iter) !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !101 !pcf.post !102 !pcf.proof !103 !pcf.effects !104 !pcf.bind !105 {
 entry:
   %w_ok = icmp sgt i32 %width, 0
   %h_ok = icmp sgt i32 %height, 0
@@ -217,7 +217,7 @@ done:
 ; @pre       @generate_fractal has been called (otherwise returns 0)
 ; @post      return == @buffer_ptr
 ; ============================================================================
-define i32 @get_buffer() !pcf.pre !106 !pcf.post !107 !pcf.proof !108 !pcf.effects !109 !pcf.bind !110 {
+define i32 @get_buffer() !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !106 !pcf.post !107 !pcf.proof !108 !pcf.effects !109 !pcf.bind !110 {
 entry:
   %ptr = load i32, i32* @buffer_ptr, align 4
   ret i32 %ptr
@@ -235,7 +235,7 @@ entry:
 ; @pre       @generate_fractal has been called (otherwise returns 0)
 ; @post      return == @buffer_size
 ; ============================================================================
-define i32 @get_buffer_size() !pcf.pre !111 !pcf.post !112 !pcf.proof !113 !pcf.effects !114 !pcf.bind !115 {
+define i32 @get_buffer_size() !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !111 !pcf.post !112 !pcf.proof !113 !pcf.effects !114 !pcf.bind !115 {
 entry:
   %size = load i32, i32* @buffer_size, align 4
   ret i32 %size
@@ -253,7 +253,7 @@ entry:
 ; @pre       (none)
 ; @post      (no effect on any state)
 ; ============================================================================
-define void @free_buffer(i32 %ptr) !pcf.pre !116 !pcf.post !117 !pcf.proof !118 !pcf.effects !119 !pcf.bind !120 {
+define void @free_buffer(i32 %ptr) !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !116 !pcf.post !117 !pcf.proof !118 !pcf.effects !119 !pcf.bind !120 {
 entry:
   ret void
 }
@@ -317,3 +317,8 @@ entry:
            qed"}
 !119 = !{!"pcf.effects", !"global.read:none,global.write:none"}
 !120 = !{!"pcf.bind", !"ptr->arg:%ptr"}
+!121 = !{!"pcf.schema", !"laststack.pcf.v1"}
+!122 = !{!"pcf.toolchain",
+         !"checker:laststack-verify-gate",
+         !"version:0.1.0",
+         !"hash:dev"}

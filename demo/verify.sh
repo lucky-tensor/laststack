@@ -51,7 +51,7 @@ json_escape() {
   printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g'
 }
 
-required_tags=("pre" "post" "proof" "effects" "bind")
+required_tags=("schema" "toolchain" "pre" "post" "proof" "effects" "bind")
 
 check_required_function() {
   local file="$1"

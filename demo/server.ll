@@ -201,7 +201,7 @@ declare i32 @wait(i32*)
 ; @proof     constant-propagation: total = sum(strlen(each constant)), QED
 ; ============================================================================
 
-define i64 @build_response(i8* %buf) !pcf.pre !1 !pcf.post !2 !pcf.proof !3 !pcf.effects !16 !pcf.bind !17 {
+define i64 @build_response(i8* %buf) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !1 !pcf.post !2 !pcf.proof !3 !pcf.effects !16 !pcf.bind !17 {
 entry:
   %offset = alloca i64
   store i64 0, i64* %offset
@@ -287,7 +287,7 @@ entry:
 ; @proof     case-analysis: read_open calls @close before ret; file_fail never opens fd. QED
 ; ============================================================================
 
-define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) !pcf.pre !18 !pcf.post !19 !pcf.proof !20 !pcf.effects !21 !pcf.bind !22 {
+define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !18 !pcf.post !19 !pcf.proof !20 !pcf.effects !21 !pcf.bind !22 {
 entry:
   %fd = call i32 @open(i8* %path, i32 0)
   %fd_ok = icmp sge i32 %fd, 0
@@ -315,7 +315,7 @@ file_fail:
 ; @post      return points to a valid null-terminated Content-Type header line (compile-time constant)
 ; ============================================================================
 
-define i8* @get_content_type(i8* %path) !pcf.pre !23 !pcf.post !24 !pcf.proof !25 !pcf.effects !26 !pcf.bind !27 {
+define i8* @get_content_type(i8* %path) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !23 !pcf.post !24 !pcf.proof !25 !pcf.effects !26 !pcf.bind !27 {
 entry:
   %wasm_suffix  = getelementptr [6 x i8], [6 x i8]* @str_wasm, i64 0, i64 0
   %is_wasm_ptr  = call i8* @strstr(i8* %path, i8* %wasm_suffix)
@@ -346,7 +346,7 @@ ret_html:
 ; @proof     runtime-assertion: checks are redundant given caller's proof. QED
 ; ============================================================================
 
-define void @check_invariants(i8* %response_buf, i64 %response_len) !pcf.pre !4 !pcf.post !5 !pcf.proof !6 !pcf.effects !28 !pcf.bind !29 {
+define void @check_invariants(i8* %response_buf, i64 %response_len) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !4 !pcf.post !5 !pcf.proof !6 !pcf.effects !28 !pcf.bind !29 {
 entry:
   %inv1 = icmp sgt i64 %response_len, 0
   %inv2 = icmp ne i8* %response_buf, null
@@ -378,7 +378,7 @@ invariants_fail:
 ; @proof     each @read_file result is checked against > 0; return 0 only when both assets load. QED
 ; ============================================================================
 
-define i32 @load_assets() !pcf.pre !13 !pcf.post !14 !pcf.proof !15 !pcf.effects !30 !pcf.bind !31 {
+define i32 @load_assets() !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !13 !pcf.post !14 !pcf.proof !15 !pcf.effects !30 !pcf.bind !31 {
 entry:
   %file_buf   = getelementptr [262144 x i8], [262144 x i8]* @file_load_buf, i64 0, i64 0
   %hdr_fmt    = getelementptr [62 x i8], [62 x i8]* @fmt_header_200, i64 0, i64 0
@@ -442,7 +442,7 @@ asset_fail:
 ; @proof     case-analysis: all three serve paths call @close before ret. QED
 ; ============================================================================
 
-define void @handle_client(i32 %client_fd) !pcf.pre !7 !pcf.post !8 !pcf.proof !9 !pcf.effects !32 !pcf.bind !33 {
+define void @handle_client(i32 %client_fd) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !7 !pcf.post !8 !pcf.proof !9 !pcf.effects !32 !pcf.bind !33 {
 entry:
   ; Read into global buffer (single-threaded: no concurrent access)
   %req_ptr    = getelementptr [1025 x i8], [1025 x i8]* @req_buf, i64 0, i64 0
@@ -499,7 +499,7 @@ serve_404:
 ; @proof     case-analysis: 4 error exits close sockfd and return 1; success path loops forever. QED
 ; ============================================================================
 
-define i32 @main() !pcf.pre !10 !pcf.post !11 !pcf.proof !12 !pcf.effects !34 !pcf.bind !35 {
+define i32 @main() !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !10 !pcf.post !11 !pcf.proof !12 !pcf.effects !34 !pcf.bind !35 {
 entry:
   %sockfd  = call i32 @socket(i32 2, i32 1, i32 0)
   %sock_ok = icmp sge i32 %sockfd, 0
@@ -735,6 +735,14 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
         !"sys.socket,sys.setsockopt,sys.bind,sys.listen,sys.accept,sys.close,sys.fork,sys.wait,libc.printf,libc.sysconf,global.read:@msg_start,@msg_error_socket,@msg_error_bind,@msg_error_listen"}
 !35 = !{!"pcf.bind",
         !"exit_code->ret,sockfd->state:%sockfd"}
+
+!36 = !{!"pcf.schema",
+        !"laststack.pcf.v1"}
+
+!37 = !{!"pcf.toolchain",
+        !"checker:laststack-verify-gate",
+        !"version:0.1.0",
+        !"hash:dev"}
 
 ; main precondition
 !10 = !{!"pcf.pre", !"smt", !"(assert true)"}

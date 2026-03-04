@@ -1,67 +1,131 @@
-# LastStack Critique (Re-evaluation against White Paper v1.1)
+# Fresh Critique of `docs/white-paper.md` (v1.2)
 
-## Purpose
+## Scope and Method
 
-This document re-evaluates the current architecture spec (`docs/white-paper.md`, v1.1) against the live demo implementation (`demo/server.ll`, `demo/fractal.ll`, `demo/build.sh`, `demo/verify.sh`, `.github/workflows/k6.yml`).
+This critique evaluates the current whitepaper (`docs/white-paper.md`, v1.2) against the current repository implementation on branch `feat-close-spec-gaps`.
 
-## Executive Assessment
+Evaluation criteria:
+- Architectural coherence: are claims internally consistent?
+- Scientific quality: are hypotheses and measurements falsifiable?
+- Operational fit: can the stated gates map to real build/CI behavior?
+- Evidence quality: are current-state claims traceable to code and scripts?
 
-- The paper is now a strong normative architecture spec.
-- The demo is still a prototype of IR-first delivery, not a proof-carrying system.
-- The largest gap is enforcement: metadata is present in parts, but verification/link/release remain non-gating.
+## What v1.2 Gets Right
 
-## White Paper Re-evaluation (v1.1)
+### 1) It cleanly reconciles two real streams of work
 
-### What Is Solid
+The paper correctly combines:
+- structural graph-comment infrastructure (`@fn/@calls/@reads` + extractor), and
+- formal proof-carrying gate aspirations (effects, bind, link gate, sealing, TCB).
 
-- PCF model is now concrete: schema keys, proof envelope, and binding semantics are all specified.
-- Effect model now has canonical atoms and matching rules.
-- Verifier input/output contract and link-gate decision logic are defined.
-- IPS durability/recovery protocol has minimum required fields and commit/replay flow.
-- Agent-interface rationale (text-first, sequential LLM behavior) is explicit and coherent.
+This avoids a false choice between “graph-first” and “formal-first.”
 
-### Remaining Ambiguities (Lower Severity)
+### 2) It shifts from ideology to measurable maturity
 
-- Formula dialect profile is implied but not fully pinned: the allowed SMT logic fragments and quantifier policy should be fixed in a verifier profile appendix.
-- Effect normalization depends on wrapper/platform maps, but the canonical source-of-truth location/versioning policy for those maps is not yet defined.
-- Link-gate entailment checks are specified semantically, but complexity bounds/fallback policy (timeouts, unknown outcomes) are not explicitly defined.
+The conformance ladder (`L0`..`L4`) is the strongest part of the document. It prevents inflated claims by requiring explicit capability thresholds.
 
-These are operational clarifications, not core architecture gaps.
+### 3) It uses evidence-first framing
 
-## Demo Conformance Matrix
+Section 1 baseline statements align with repository reality and avoid pretending that verifier/link/sealing are complete on `master`.
 
-| Spec area | Required by paper | Current demo status | Result |
-|---|---|---|---|
-| PCF coverage | Exported/critical functions carry full PCF metadata | `demo/fractal.ll` has no PCF metadata; `@read_file` and `@get_content_type` in `demo/server.ll` are not PCFs | Fail |
-| `pcf.effects` | Declared and checked for every PCF | No `!pcf.effects` in demo code | Fail |
-| `pcf.bind` | Symbols bound to SSA/memory regions | No `!pcf.bind` in demo code | Fail |
-| Proof discharge | Solver/checker verdict gates build/link | `demo/verify.sh` is report-only and prints PASS text | Fail |
-| Link gate | Enforce schema/pre/post/effect compatibility | No implemented link-gate stage | Fail |
-| Artifact seal | Emit manifest with digests (IR/proof/toolchain/TCB) | No sealing/manifest step in build/CI | Fail |
-| TCB scoping ops | Capture/version TCB in release artifacts | TCB exists only as paper text | Fail |
-| IPS runtime | Typed persistent state with recovery validation | No IPS implementation in demo runtime | Fail |
-| Benchmark accountability | CI benchmarks + committed snapshot | k6 CI writes `docs/benchmark.md` and uploads artifact | Pass |
-| IR-first authored stack | Server and wasm authored in LLVM IR | Implemented (`demo/server.ll`, `demo/fractal.ll`) | Pass |
+### 4) It introduces a scientific evaluation frame
 
-## Evidence Notes
+H1..H5 are falsifiable and force instrumentation discipline. This is materially better than narrative-only architecture docs.
 
-- `demo/fractal.ll` contains no `!pcf.*` metadata.
-- `demo/server.ll` defines `@read_file` and `@get_content_type` without PCF metadata.
-- `demo/verify.sh` ends with a static PASS message and does not invoke solver/checker tooling.
-- CI workflow uploads benchmark artifacts but has no verification/link-gate/artifact-seal stages.
+## Core Critique
 
-## Verdict
+### A) v1.2 still mixes “spec” and “program plan” in the same level of authority
 
-The architecture is credible and now mostly specified. The implementation remains pre-compliance.
+Problem:
+- Some sections are normative requirements (“must emit manifest,” “reject edge”),
+- others are roadmap-like measurements and hypotheses.
 
-Accurate statement today:
-- Implemented: LLVM-IR server + LLVM-IR wasm + wasm-first browser rendering + CI benchmark persistence.
-- Not implemented: proof-carrying linkage, effect/binding enforcement, artifact sealing, TCB manifesting, IPS durability/recovery runtime.
+Impact:
+- Hard to determine what is required for compliance now versus what is research instrumentation.
 
-## Recommended Next Milestones
+Recommendation:
+- Split into two files or two explicit strata inside the paper:
+  1. **Normative Spec** (must-pass release gates)
+  2. **Research Program** (metrics/hypotheses, optional for compliance)
 
-1. Add `!pcf.effects` and `!pcf.bind` to all existing PCFs, then cover `@read_file`, `@get_content_type`, and exported fractal functions.
-2. Replace `demo/verify.sh` with a fail-closed verifier stage that emits machine-readable verdicts.
-3. Add a link-gate stage that consumes verifier outputs and rejects incompatible edges.
-4. Add artifact sealing (`manifest.json`) including IR/proof/toolchain/TCB digests.
-5. Implement a minimal IPS-backed object with crash-recovery validation to exercise section 5 claims.
+### B) The PCF schema is under-specified in this v1.2 revision
+
+v1.2 names required keys (`pcf.schema`, `pcf.pre`, etc.) but does not fully pin wire format and canonical serialization in this revision text.
+
+Impact:
+- Independent implementations may interpret payload shape differently.
+- Gate portability suffers.
+
+Recommendation:
+- Reintroduce one normative schema appendix with:
+  - canonical encoding,
+  - required/optional fields,
+  - compatibility and versioning rules,
+  - verifier failure behavior on unknown/missing fields.
+
+### C) Link-gate semantics are conceptually correct but operationally incomplete
+
+v1.2 defines edge checks, but does not define fallback policy under verifier uncertainty (timeouts, unknown SAT/SMT outcomes, solver divergence).
+
+Impact:
+- Different runners may produce different pass/fail outcomes for the same commit.
+
+Recommendation:
+- Add a strict policy table:
+  - `valid` -> pass
+  - `invalid` -> fail
+  - `unknown/timeout` -> fail in release profile, warn in dev profile
+
+### D) Artifact seal section needs a normative manifest schema id
+
+The paper requires a manifest, but does not lock the schema id and required fields as a checksum-stable contract in this revision.
+
+Impact:
+- “sealed artifact” can become implementation-defined.
+
+Recommendation:
+- Define `laststack.artifact.v1` with required keys and hash algorithms.
+
+### E) IPS section is principled but still detached from immediate adoption path
+
+The paper correctly states IPS requirements, but no minimal first IPS scope is mandated (single object type, crash matrix, fsync model, etc.).
+
+Impact:
+- Teams can defer IPS indefinitely while still claiming architectural progress.
+
+Recommendation:
+- Add “minimum IPS compliance test” criteria (one durable object, deterministic crash-recovery harness, invariant proofs on replay).
+
+## Evidence Check Against Current Branch
+
+From current branch implementation:
+- `demo/build.sh` now includes verification gate, link-gate, IPS prototype build, and artifact sealing steps.
+- `demo/verify.sh` is fail-closed and emits machine-readable JSON.
+- `demo/fractal.ll` includes PCF metadata on exported functions in this branch state.
+- `demo/server.ll` includes broader PCF coverage and effect/bind metadata in this branch state.
+
+Interpretation:
+- Branch implementation is ahead of baseline `master` and better aligned with v1.2 goals.
+- Paper baseline remains historically correct for `master`, but a new section should explicitly track **branch-level** conformance when used for active R&D.
+
+## Scientific Rigor Assessment
+
+The scientific posture is substantially improved, but two additions are needed to make it robust:
+
+1. Define exact data collection protocol per hypothesis (sampling window, environment controls, confidence interval method).
+2. Require machine-readable experiment metadata (hardware profile, kernel/toolchain versions) for each reported metric.
+
+Without these, hypothesis outcomes are easy to bias through test environment drift.
+
+## Bottom Line
+
+`docs/white-paper.md` v1.2 is directionally strong and substantially more rigorous than earlier versions. The central improvement is the conformance-level model tied to measurable outcomes.
+
+The main remaining weakness is boundary clarity between normative release spec and research methodology. Fix that separation, pin schema-level contracts for PCF and artifact manifests, and add deterministic fallback policy for verifier uncertainty. Those steps would make the architecture both implementable and auditable across teams.
+
+## Immediate Next Edits Recommended
+
+1. Add a normative appendix for `laststack.pcf.v1` and `laststack.artifact.v1`.
+2. Add verifier/link-gate uncertainty policy (`valid/invalid/unknown`) by profile.
+3. Split compliance requirements from research hypotheses in document structure.
+4. Add a concrete “minimum IPS compliance test” subsection.

@@ -52,11 +52,14 @@ else
   fi
 fi
 
-declare -A gated
-for fn in build_response read_file get_content_type check_invariants load_assets handle_client main \
-          generate_fractal get_buffer get_buffer_size free_buffer; do
-  gated["$fn"]=1
-done
+gated_fns="build_response read_file get_content_type check_invariants load_assets handle_client main generate_fractal get_buffer get_buffer_size free_buffer"
+
+is_gated() {
+  case " $gated_fns " in
+    *" $1 "*) return 0 ;;
+    *) return 1 ;;
+  esac
+}
 
 has_full_pcf_signature() {
   local file="$1"
@@ -67,7 +70,7 @@ has_full_pcf_signature() {
     return 1
   fi
   local tag
-  for tag in pre post proof effects bind; do
+  for tag in schema toolchain pre post proof effects bind; do
     if ! printf '%s\n' "$sig" | rg -q "!pcf\\.${tag} ![0-9]+"; then
       return 1
     fi
@@ -127,7 +130,7 @@ for file in server.ll fractal.ll; do
     caller="${edge%% *}"
     callee="${edge##* }"
 
-    if [ -z "${gated[$caller]:-}" ] || [ -z "${gated[$callee]:-}" ]; then
+    if ! is_gated "$caller" || ! is_gated "$callee"; then
       continue
     fi
 
