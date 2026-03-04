@@ -1,6 +1,6 @@
 # LastStack Demo
 
-LastStack is a staged, agent-first software architecture described in **docs/white-paper.md** (“The Last Stack: A Post-Human Software Development Architecture”, Mar 2026). It moves code from text toward **proof-carrying LLVM IR**: each function ships with pre/postconditions, invariants, and a proof witness. Near-term, text stays but gains structural metadata; long-term, LLVM IR plus proofs becomes the canonical form.
+LastStack is a staged, agent-first software architecture described in **docs/white-paper.md** (“The Last Stack: A Post-Human Software Development Architecture”, Mar 2026). It moves code from text toward **proof-carrying LLVM IR**: each function ships with pre/postconditions, invariants, and a proof witness. Near-term, text stays but gains structural metadata; long-term, LLVM IR plus proofs becomes the canonical form. The demo goal: a pure-LLVM HTTP server plus a WASM webpage, authored end-to-end by agents.
 
 This repo is a runnable demo of that philosophy:
 - **Server** (`demo/server.ll`) — HTTP/1.1 server in LLVM IR with PCF-style metadata; serves static assets only.
