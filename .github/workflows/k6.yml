@@ -7,7 +7,10 @@ on:
 
 jobs:
   k6:
+    if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # allow committing updated benchmark snapshot
 
     steps:
       - name: Checkout
@@ -130,6 +133,22 @@ jobs:
               cat /tmp/benchmark_prev.md
             fi
           } > benchmark.md
+
+      - name: Commit benchmark.md
+        if: github.ref == 'refs/heads/master'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -e
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git diff --quiet -- benchmark.md; then
+            echo "No benchmark changes to commit."
+            exit 0
+          fi
+          git add benchmark.md
+          git commit -m "chore: update benchmark snapshot [skip ci]"
+          git push origin HEAD:master
 
       - name: Upload k6 summary
         if: always()
