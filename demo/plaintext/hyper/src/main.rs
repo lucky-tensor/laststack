@@ -27,6 +27,10 @@ fn main() {
         .build()
         .unwrap();
     runtime
-        .block_on(Server::bind(&addr).serve(make_service))
+        .block_on(
+            Server::try_bind(&addr)
+                .unwrap()
+                .serve(make_service),
+        )
         .unwrap();
 }
