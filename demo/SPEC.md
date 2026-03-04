@@ -255,6 +255,190 @@ For each pixel (x, y) in the image:
 
 ---
 
+## Benchmark Tool
+
+**File:** `bench.ll`
+
+Sequential HTTP benchmark written in LLVM IR.
+
+**Usage:**
+```
+./laststack-bench [port [n_requests]]
+```
+
+**Output:** requests ok/total, elapsed ms, RPS, avg latency µs.
+
+**Internals:**
+- `@get_time_ns` — `clock_gettime(CLOCK_MONOTONIC)` → nanoseconds
+- `@make_request` — TCP connect → `write` GET / → `read` response → `close`; always closes fd
+- `@run_benchmark` — loop with loop-invariant proof in PCF metadata
+- `@main` — parses `argv[1]` (port) and `argv[2]` (n_requests)
+
+---
+
+## Server Performance Optimizations
+
+### Implemented
+
+The following optimizations were applied to `server.ll` after initial benchmarking revealed per-request overhead:
+
+| Optimization | Before | After |
+|---|---|---|
+| File I/O per request | `open` + `read` + `close` (3 syscalls) | 0 — prebuilt at startup |
+| Header construction | `snprintf` + `memcpy` per request | 0 — prebuilt at startup |
+| Request buffer | 1025-byte `memset` per request | 1 null-byte store |
+| Invariant check | `printf` syscall per request | removed |
+| Per-request logging | 2× `printf` per connection | removed |
+| 404 length | `strlen` call | precomputed `i64 99` global |
+
+**Mechanism — `@load_assets`:** called once from `@main` before the accept loop.
+Reads `index.html` and `fractal.wasm` into `@file_load_buf`, calls `snprintf` once per asset
+to build the full `HTTP/1.1 200 OK ...` header, then `memcpy`s the file body immediately
+after. The resulting complete responses are stored in `@html_resp` / `@wasm_resp` globals.
+
+**Per-request hot path after optimization:**
+```
+read(fd, req_buf, 1024)          ; 1 syscall
+store i8 0 at req_buf[bytes_read] ; null-terminate
+strstr(req_buf, "GET /fractal.wasm") ; in-process
+write(fd, prebuilt_resp, resp_len) ; 1 syscall
+close(fd)                         ; 1 syscall
+```
+
+**Measured result (loopback, same machine):**
+
+| Server | Sequential RPS | Concurrent wall-clock (8 clients) |
+|--------|---------------|-----------------------------------|
+| LastStack (pre-optimization) | ~6,700 | — |
+| LastStack (optimized) | ~13,000 | ~33,000 |
+| Caddy v2 (Go, HTTP/1.1, no TLS) | ~3,400 | — |
+
+LastStack outperforms Caddy in sequential no-keep-alive benchmarks because Caddy carries
+Go runtime, middleware, file-stat checks, and content-negotiation overhead per request.
+Under concurrent load with keep-alive Caddy scales much better (see below).
+
+---
+
+## State-of-the-Art Concurrency Strategies
+
+The current server is **single-threaded, synchronous, no keep-alive**. The following
+strategies are used by production servers (nginx, lighttpd, h2o) to reach
+100,000–1,000,000+ RPS on commodity hardware.
+
+### 1. HTTP Keep-Alive (Connection Reuse)
+
+Each TCP connection currently costs ~50–100 µs of kernel overhead (SYN/SYN-ACK/ACK +
+FIN/FIN-ACK). HTTP/1.1 keep-alive reuses the TCP connection across multiple requests,
+eliminating this cost entirely after the first request.
+
+**Implementation in server.ll:**
+- Remove `Connection: close` from the response header
+- Loop `read → dispatch → write` on the same `client_fd` until `bytes_read == 0`
+- Parse `Connection: close` request header to decide when to tear down
+
+**Expected impact:** 3–5× RPS improvement for typical browser request patterns.
+
+### 2. epoll / Event-Driven I/O
+
+Single-threaded blocking `accept` + synchronous `read/write` means the server sits idle
+while the kernel processes each syscall. An event loop using `epoll` allows one thread to
+manage thousands of concurrent connections without blocking:
+
+```
+epoll_create → add listen_fd
+loop:
+  epoll_wait(events)
+  for each ready fd:
+    if fd == listen_fd: accept, add to epoll
+    else: read request, write response
+```
+
+**Implementation in server.ll:** requires `epoll_create1`, `epoll_ctl`, `epoll_wait`
+declarations and a non-blocking socket (`O_NONBLOCK`). The accept loop becomes an event
+dispatch table.
+
+**Expected impact:** 10–50× improvement under high concurrency vs. blocking I/O.
+
+### 3. Multi-Worker / Pre-fork
+
+Fork N workers (one per CPU core) before the accept loop. Each worker calls `accept` on
+the shared socket independently. The kernel distributes connections across workers via
+`SO_REUSEPORT` (Linux 3.9+), eliminating the thundering-herd problem.
+
+```
+for i in 0..NCPU:
+    fork()
+    if child: run_accept_loop()
+parent: wait()
+```
+
+**Implementation in server.ll:** add `fork`, `sysconf(_SC_NPROCESSORS_ONLN)`, `waitpid`
+declarations. Each child runs the existing accept loop independently. `SO_REUSEPORT`
+requires adding a second `setsockopt` call.
+
+**Expected impact:** near-linear scaling with core count (40-core machine → 40× single-core RPS).
+
+### 4. `sendfile` / Zero-Copy Transfer
+
+Currently: `read(file_fd)` copies bytes to user-space, then `write(client_fd)` copies them
+back to kernel. `sendfile(2)` performs the transfer entirely in kernel space, eliminating
+both copies and the intermediate buffer.
+
+```llvm
+declare i64 @sendfile(i32, i32, i64*, i64)
+; sendfile(client_fd, file_fd, offset=0, count=file_size)
+```
+
+Since responses are prebuilt at startup (headers + body in one buffer), `sendfile` applies
+to the entire `@html_resp` / `@wasm_resp` global via a memfd or by reopening the buffer as
+a file descriptor.
+
+**Expected impact:** ~20–30% improvement for large files; less significant for small assets
+like this demo (5 KB HTML, 1 KB WASM).
+
+### 5. `TCP_CORK` / `TCP_NODELAY`
+
+`TCP_CORK` (Linux) holds outgoing data in the kernel buffer until the cork is removed or
+the MSS is reached. This batches headers + body into a single TCP segment, reducing packet
+count. `TCP_NODELAY` disables Nagle's algorithm for latency-sensitive use cases.
+
+```llvm
+; setsockopt(client_fd, IPPROTO_TCP=6, TCP_CORK=3, &one, 4)
+; ... write header, write body ...
+; setsockopt(client_fd, IPPROTO_TCP=6, TCP_CORK=3, &zero, 4)
+```
+
+**Implementation in server.ll:** two additional `setsockopt` calls around each response
+write. Already using `Connection: close` which flushes the kernel buffer on `close(fd)`.
+
+**Expected impact:** minor for small responses already sent in a single `write` call.
+
+### 6. Huge Pages / Memory Alignment
+
+`@html_resp` and `@wasm_resp` are 266 KB globals accessed on every request. Aligning them
+to 2 MB huge-page boundaries and using `madvise(MADV_HUGEPAGE)` keeps the response buffers
+in TLB-resident huge pages, reducing TLB misses in the write path.
+
+**Expected impact:** small but measurable (~5%) under very high RPS.
+
+### Summary Table
+
+| Strategy | Complexity | Expected RPS gain |
+|---|---|---|
+| HTTP keep-alive | Medium | 3–5× |
+| epoll event loop | High | 10–50× under concurrency |
+| Pre-fork multi-worker | Medium | N× (N = core count) |
+| sendfile zero-copy | Low | ~20% for large files |
+| TCP_CORK | Low | negligible for small responses |
+| Huge pages | Low | ~5% |
+
+A production-grade server implements all of the above. nginx's architecture combines
+pre-fork workers (strategy 3) with an epoll event loop per worker (strategy 2) and
+keep-alive (strategy 1), which is why it achieves 100,000–500,000 RPS on the same
+hardware where LastStack currently achieves ~13,000 sequential RPS.
+
+---
+
 ## Security Considerations
 
 - Server must not serve files outside `./public/`
@@ -270,4 +454,5 @@ For each pixel (x, y) in the image:
 - Multiple fractal types (Julia, Burning Ship)
 - Progressive fidelity ramp across frames
 - WebGL rendering for performance
-- Server-side rendering option
+- HTTP keep-alive and epoll event loop in server.ll
+- Pre-fork multi-worker with SO_REUSEPORT
