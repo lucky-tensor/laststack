@@ -10,12 +10,10 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Build if binary doesn't exist
-if [ ! -f laststack-server ]; then
-    echo "[LastStack] Binary not found. Building..."
-    bash build.sh
-    echo ""
-fi
+# Always build first to avoid stale/incompatible binaries.
+echo "[LastStack] Building..."
+bash build.sh
+echo ""
 
 # Run verification
 echo "[LastStack] Running invariant verification..."

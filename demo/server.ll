@@ -97,15 +97,19 @@ target triple = "x86_64-pc-linux-gnu"
 @msg_invariant_ok = private unnamed_addr constant [51 x i8] c"[LastStack] Invariant check: all invariants hold.\0A\00"
 
 ; @global file paths
-@path_index = private unnamed_addr constant [19 x i8] c"./public/index.html\00"
-@path_wasm = private unnamed_addr constant [21 x i8] c"./public/fractal.wasm\00"
+@path_index = private unnamed_addr constant [20 x i8] c"./public/index.html\00"
+@path_wasm = private unnamed_addr constant [22 x i8] c"./public/fractal.wasm\00"
 
 ; @global content type strings
-@content_type_html = private unnamed_addr constant [25 x i8] c"Content-Type: text/html\0D\0A\00"
-@content_type_wasm = private unnamed_addr constant [30 x i8] c"Content-Type: application/wasm\0D\0A\00"
+@content_type_html = private unnamed_addr constant [26 x i8] c"Content-Type: text/html\0D\0A\00"
+@content_type_wasm = private unnamed_addr constant [33 x i8] c"Content-Type: application/wasm\0D\0A\00"
 
-; @global HTTP 404
-@http_404 = private unnamed_addr constant [22 x i8] c"HTTP/1.1 404 Not Found\0D\0A\00"
+; @global request parser strings
+@req_fractal = private unnamed_addr constant [18 x i8] c"GET /fractal.wasm\00"
+
+; @global header/response templates
+@fmt_header_200 = private unnamed_addr constant [62 x i8] c"HTTP/1.1 200 OK\0D\0A%sContent-Length: %ld\0D\0AConnection: close\0D\0A\0D\0A\00"
+@response_404 = private unnamed_addr constant [100 x i8] c"HTTP/1.1 404 Not Found\0D\0AContent-Type: text/plain\0D\0AContent-Length: 9\0D\0AConnection: close\0D\0A\0D\0ANot Found\00"
 
 ; ============================================================================
 ; External declarations (libc / POSIX)
@@ -129,6 +133,7 @@ declare i32 @close(i32)
 declare i32 @setsockopt(i32, i32, i32, i8*, i32)
 declare i32 @htons(i32)
 declare i32 @printf(i8*, ...)
+declare i32 @snprintf(i8*, i64, i8*, ...)
 declare i64 @strlen(i8*)
 declare i32 @open(i8*, i32)
 declare i64 @lseek(i32, i64, i32)
@@ -243,7 +248,7 @@ entry:
 ; ============================================================================
 ; @function     @read_file
 ; @called-by    @handle_client
-; @calls        @open, @fstat, @read, @close, @lseek
+; @calls        @open, @read, @close
 ; @pre          %path is valid C string, %buf has sufficient space
 ; @post         returns bytes read, -1 on error
 ; @invariant    file descriptor is always closed
@@ -253,29 +258,12 @@ define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) {
 entry:
   %fd = call i32 @open(i8* %path, i32 0)
   %fd_valid = icmp sge i32 %fd, 0
-  br i1 %fd_valid, label %file_open, label %file_fail
+  br i1 %fd_valid, label %read_open, label %file_fail
 
-file_open:
-  %statbuf = alloca %struct.stat
-  %stat_ptr = bitcast %struct.stat* %statbuf to i8*
-  %fstat_ret = call i32 @fstat(i32 %fd, i8* %stat_ptr)
-  %stat_ok = icmp sge i32 %fstat_ret, 0
-  br i1 %stat_ok, label %stat_ok, label %close_fail
-
-stat_ok:
-  %size_ptr = getelementptr %struct.stat, %struct.stat* %statbuf, i32 0, i32 0
-  %file_size = load i64, i64* %size_ptr
-  %size_fits = icmp ule i64 %file_size, %buf_size
-  br i1 %size_fits, label %read_file, label %close_fail
-
-read_file:
-  %bytes = call i64 @read(i32 %fd, i8* %buf, i64 %file_size)
+read_open:
+  %bytes = call i64 @read(i32 %fd, i8* %buf, i64 %buf_size)
   call i32 @close(i32 %fd)
   ret i64 %bytes
-
-close_fail:
-  call i32 @close(i32 %fd)
-  ret i64 -1
 
 file_fail:
   ret i64 -1
@@ -284,43 +272,32 @@ file_fail:
 ; ============================================================================
 ; @function     @get_content_type
 ; @called-by    @handle_client
+; @calls        @strstr
+; @reads        @str_wasm, @content_type_html, @content_type_wasm
 ; @pre          %path is valid C string
 ; @post         returns pointer to content type string
 ; ============================================================================
 
-define i32 @get_content_type(i8* %path) {
+define i8* @get_content_type(i8* %path) {
 entry:
-  %path_str = call i64 @strlen(i8* %path)
-  
-  %is_html = call i32 @strstr(i8* %path, i8* getelementptr ([6 x i8], [6 x i8]* @str_html, i64 0, i64 0))
-  %is_html_cmp = icmp ne i32 %is_html, 0
-  br i1 %is_html_cmp, label %ret_html, label %check_wasm
-
-ret_html:
-  %ptr_html = getelementptr [25 x i8], [25 x i8]* @content_type_html, i64 0, i64 0
-  %val_html = bitcast i8* %ptr_html to i32
-  ret i32 %val_html
-
-check_wasm:
-  %is_wasm = call i32 @strstr(i8* %path, i8* getelementptr ([5 x i8], [5 x i8]* @str_wasm, i64 0, i64 0))
-  %is_wasm_cmp = icmp ne i32 %is_wasm, 0
-  br i1 %is_wasm_cmp, label %ret_wasm, label %ret_default
+  %wasm_suffix = getelementptr [6 x i8], [6 x i8]* @str_wasm, i64 0, i64 0
+  %is_wasm_ptr = call i8* @strstr(i8* %path, i8* %wasm_suffix)
+  %is_wasm = icmp ne i8* %is_wasm_ptr, null
+  br i1 %is_wasm, label %ret_wasm, label %ret_html
 
 ret_wasm:
-  %ptr_wasm = getelementptr [30 x i8], [30 x i8]* @content_type_wasm, i64 0, i64 0
-  %val_wasm = bitcast i8* %ptr_wasm to i32
-  ret i32 %val_wasm
+  %ptr_wasm = getelementptr [33 x i8], [33 x i8]* @content_type_wasm, i64 0, i64 0
+  ret i8* %ptr_wasm
 
-ret_default:
-  %ptr_def = getelementptr [25 x i8], [25 x i8]* @content_type_html, i64 0, i64 0
-  %val_def = bitcast i8* %ptr_def to i32
-  ret i32 %val_def
+ret_html:
+  %ptr_html = getelementptr [26 x i8], [26 x i8]* @content_type_html, i64 0, i64 0
+  ret i8* %ptr_html
 }
 
-declare i32 @strstr(i8*, i8*)
+declare i8* @strstr(i8*, i8*)
 
 @str_html = private unnamed_addr constant [6 x i8] c".html\00"
-@str_wasm = private unnamed_addr constant [5 x i8] c".wasm\00"
+@str_wasm = private unnamed_addr constant [6 x i8] c".wasm\00"
 
 ; ============================================================================
 ; @function     @check_invariants
@@ -353,10 +330,12 @@ invariants_fail:
 ; ============================================================================
 ; @function     @handle_client
 ; @called-by    @main
-; @calls        @read, @write, @printf, @close, @read_file, @get_content_type, @strlen, @llvm.memcpy
-; @reads        @msg_served, @path_index, @path_wasm, @http_status, @http_content_type,
-;               @http_content_length, @http_crlf, @http_connection_close
-; @cfg          entry → parse_request → serve_file → send_response → close
+; @calls        @read, @strstr, @read_file, @get_content_type, @snprintf,
+;               @llvm.memcpy, @check_invariants, @write, @printf, @close, @strlen
+; @reads        @req_fractal, @path_index, @path_wasm, @fmt_header_200,
+;               @response_404, @msg_served
+; @cfg          entry → parse_request → (select_wasm | select_html) → serve_file
+;               serve_file → (build_200 | serve_404), build_200 → (send_200 | serve_404)
 ; @pre          %client_fd >= 0 (valid open file descriptor)
 ; @post         HTTP response sent to client, fd closed
 ; @invariant    fd is always closed
@@ -365,130 +344,68 @@ invariants_fail:
 define void @handle_client(i32 %client_fd) !pcf.pre !7 !pcf.post !8 !pcf.proof !9 {
 entry:
   ; Read HTTP request
-  %read_buf = alloca [1024 x i8]
-  %read_ptr = getelementptr [1024 x i8], [1024 x i8]* %read_buf, i64 0, i64 0
+  %read_buf = alloca [1025 x i8]
+  %read_ptr = getelementptr [1025 x i8], [1025 x i8]* %read_buf, i64 0, i64 0
+  call void @llvm.memset.p0i8.i64(i8* %read_ptr, i8 0, i64 1025, i1 false)
   %bytes_read = call i64 @read(i32 %client_fd, i8* %read_ptr, i64 1024)
-  
-  ; Check if request starts with "GET /fractal"
-  %get_ptr = getelementptr [5 x i8], [5 x i8]* @str_get, i64 0, i64 0
-  %is_fractal = call i32 @strstr(i8* %read_ptr, i8* %get_ptr)
-  %fractal_cmp = icmp ne i32 %is_fractal, 0
-  br i1 %fractal_cmp, label %check_fractal, label %check_root
+  %has_request = icmp sgt i64 %bytes_read, 0
+  br i1 %has_request, label %parse_request, label %serve_404
 
-check_fractal:
-  %fractal_path = getelementptr [20 x i8], [20 x i8]* @path_wasm, i64 0, i64 0
+parse_request:
+  %fractal_req = getelementptr [18 x i8], [18 x i8]* @req_fractal, i64 0, i64 0
+  %fractal_match_ptr = call i8* @strstr(i8* %read_ptr, i8* %fractal_req)
+  %is_fractal = icmp ne i8* %fractal_match_ptr, null
+  br i1 %is_fractal, label %select_wasm, label %select_html
+
+select_wasm:
+  %wasm_path = getelementptr [22 x i8], [22 x i8]* @path_wasm, i64 0, i64 0
   br label %serve_file
 
-check_root:
+select_html:
+  %index_path = getelementptr [20 x i8], [20 x i8]* @path_index, i64 0, i64 0
   br label %serve_file
 
 serve_file:
-  %file_path = phi i8* [ %fractal_path, %check_fractal ], [ %fractal_path, %check_root ]
-  
-  ; Use index.html as default
-  %use_index = icmp eq i8* %file_path, %fractal_path
-  %index_path = getelementptr [19 x i8], [19 x i8]* @path_index, i64 0, i64 0
-  %final_path = select i1 %use_index, i8* %index_path, i8* %fractal_path
-  
-  ; Response buffer (16KB for file + headers)
-  %file_buf = alloca [16384 x i8]
-  %file_buf_ptr = getelementptr [16384 x i8], [16384 x i8]* %file_buf, i64 0, i64 0
-  
-  ; Read file
-  %file_size = call i64 @read_file(i8* %final_path, i8* %file_buf_ptr, i64 16384)
-  %file_valid = icmp sgt i64 %file_size, 0
-  
-  ; Build HTTP response
-  %resp_buf = alloca [2048 x i8]
-  %resp_ptr = getelementptr [2048 x i8], [2048 x i8]* %resp_buf, i64 0, i64 0
-  %offset = alloca i64
-  store i64 0, i64* %offset
-  
-  ; Write "HTTP/1.1 200 OK\r\n"
-  %status_ptr = getelementptr [18 x i8], [18 x i8]* @http_status, i64 0, i64 0
-  %status_len = call i64 @strlen(i8* %status_ptr)
-  %off0 = load i64, i64* %offset
-  %dst0 = getelementptr i8, i8* %resp_ptr, i64 %off0
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst0, i8* %status_ptr, i64 %status_len, i1 false)
-  %off1 = add i64 %off0, %status_len
-  store i64 %off1, i64* %offset
-  
-  ; Write content type
-  %ct_ptr = call i32 @get_content_type(i8* %final_path)
-  %ct_i8 = bitcast i32 %ct_ptr to i8*
-  %ct_len = call i64 @strlen(i8* %ct_i8)
-  %off2 = load i64, i64* %offset
-  %dst1 = getelementptr i8, i8* %resp_ptr, i64 %off2
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst1, i8* %ct_i8, i64 %ct_len, i1 false)
-  %off3 = add i64 %off2, %ct_len
-  store i64 %off3, i64* %offset
-  
-  ; Write "Content-Length: "
-  %cl_ptr = getelementptr [17 x i8], [17 x i8]* @http_content_length, i64 0, i64 0
-  %cl_len = call i64 @strlen(i8* %cl_ptr)
-  %off4 = load i64, i64* %offset
-  %dst2 = getelementptr i8, i8* %resp_ptr, i64 %off4
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst2, i8* %cl_ptr, i64 %cl_len, i1 false)
-  %off5 = add i64 %off4, %cl_len
-  store i64 %off5, i64* %offset
-  
-  ; Write file size (simplified - assume < 10 digits)
-  %size_char_ptr = getelementptr [12 x i8], [12 x i8]* @size_str_buf, i64 0, i64 0
-  %size_bytes = call i32 @itoa(i64 %file_size, i8* %size_char_ptr)
-  %size_str_len = call i64 @strlen(i8* %size_char_ptr)
-  %off6 = load i64, i64* %offset
-  %dst3 = getelementptr i8, i8* %resp_ptr, i64 %off6
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst3, i8* %size_char_ptr, i64 %size_str_len, i1 false)
-  %off7 = add i64 %off6, %size_str_len
-  store i64 %off7, i64* %offset
-  
-  ; Write "\r\n"
-  %crlf_ptr = getelementptr [3 x i8], [3 x i8]* @http_crlf, i64 0, i64 0
-  %crlf_len = call i64 @strlen(i8* %crlf_ptr)
-  %off8 = load i64, i64* %offset
-  %dst4 = getelementptr i8, i8* %resp_ptr, i64 %off8
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst4, i8* %crlf_ptr, i64 %crlf_len, i1 false)
-  %off9 = add i64 %off8, %crlf_len
-  store i64 %off9, i64* %offset
-  
-  ; Write "Connection: close\r\n"
-  %cc_ptr = getelementptr [20 x i8], [20 x i8]* @http_connection_close, i64 0, i64 0
-  %cc_len = call i64 @strlen(i8* %cc_ptr)
-  %off10 = load i64, i64* %offset
-  %dst5 = getelementptr i8, i8* %resp_ptr, i64 %off10
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst5, i8* %cc_ptr, i64 %cc_len, i1 false)
-  %off11 = add i64 %off10, %cc_len
-  store i64 %off11, i64* %offset
-  
-  ; Write blank line
-  %off12 = load i64, i64* %offset
-  %dst6 = getelementptr i8, i8* %resp_ptr, i64 %off12
-  call void @llvm.memcpy.p0i8.p0i8.i64(i8* %dst6, i8* %crlf_ptr, i64 %crlf_len, i1 false)
-  %off13 = add i64 %off12, %crlf_len
-  store i64 %off13, i64* %offset
-  
-  ; Copy file data after headers
-  %header_end = load i64, i64* %offset
-  %body_dst = getelementptr i8, i8* %resp_ptr, i64 %header_end
+  %file_path = phi i8* [ %wasm_path, %select_wasm ], [ %index_path, %select_html ]
+  %content_type = call i8* @get_content_type(i8* %file_path)
+
+  ; Read static asset into memory.
+  %file_buf = alloca [262144 x i8]
+  %file_buf_ptr = getelementptr [262144 x i8], [262144 x i8]* %file_buf, i64 0, i64 0
+  %file_size = call i64 @read_file(i8* %file_path, i8* %file_buf_ptr, i64 262144)
+  %file_ok = icmp sgt i64 %file_size, 0
+  br i1 %file_ok, label %build_200, label %serve_404
+
+build_200:
+  ; Response buffer keeps header + file payload contiguous for one write.
+  %resp_buf = alloca [266240 x i8]
+  %resp_ptr = getelementptr [266240 x i8], [266240 x i8]* %resp_buf, i64 0, i64 0
+  %header_fmt = getelementptr [62 x i8], [62 x i8]* @fmt_header_200, i64 0, i64 0
+  %header_len_i32 = call i32 (i8*, i64, i8*, ...) @snprintf(i8* %resp_ptr, i64 4096, i8* %header_fmt, i8* %content_type, i64 %file_size)
+  %header_len = sext i32 %header_len_i32 to i64
+  %header_ok = icmp sgt i64 %header_len, 0
+  br i1 %header_ok, label %send_200, label %serve_404
+
+send_200:
+  %body_dst = getelementptr i8, i8* %resp_ptr, i64 %header_len
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* %body_dst, i8* %file_buf_ptr, i64 %file_size, i1 false)
-  %total_len = add i64 %header_end, %file_size
-  
-  ; Send response
+  %total_len = add i64 %header_len, %file_size
   %written = call i64 @write(i32 %client_fd, i8* %resp_ptr, i64 %total_len)
-  
-  ; Log
+
+  call void @check_invariants(i8* %resp_ptr, i64 %total_len)
+
   %served_msg = getelementptr [30 x i8], [30 x i8]* @msg_served, i64 0, i64 0
   call i32 (i8*, ...) @printf(i8* %served_msg)
-  
-  ; Close
   call i32 @close(i32 %client_fd)
+  ret void
 
+serve_404:
+  %nf_ptr = getelementptr [100 x i8], [100 x i8]* @response_404, i64 0, i64 0
+  %nf_len = call i64 @strlen(i8* %nf_ptr)
+  %nf_written = call i64 @write(i32 %client_fd, i8* %nf_ptr, i64 %nf_len)
+  call i32 @close(i32 %client_fd)
   ret void
 }
-
-declare i32 @itoa(i64, i8*)
-@str_get = private unnamed_addr constant [5 x i8] c"GET /\00"
-@size_str_buf = private unnamed_addr constant [12 x i8] zeroinitializer
 
 ; ============================================================================
 ; @function     @main

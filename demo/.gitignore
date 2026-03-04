@@ -1,0 +1,5 @@
+laststack-server
+server.o
+server.bc
+server-opt.bc
+public/fractal.o

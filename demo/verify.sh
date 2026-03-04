@@ -22,22 +22,22 @@ echo "--- Proof-Carrying Functions (PCFs) ---"
 echo ""
 
 # Parse the IR file for PCF-annotated functions
-grep -E 'define .* @' server.ll | while read -r line; do
-    func_name=$(echo "$line" | grep -oP '@\w+' | head -1)
+while IFS= read -r line; do
+    func_name=$(echo "$line" | sed -nE 's/.*(@[A-Za-z_][A-Za-z0-9_.]*).*/\1/p')
     has_pcf=$(echo "$line" | grep -c 'pcf\.' || true)
     if [ "$has_pcf" -gt 0 ]; then
         echo "  PCF: $func_name"
-        echo "    Annotations: $(echo "$line" | grep -oP '!pcf\.\w+' | tr '\n' ', ' | sed 's/,$//')"
+        echo "    Annotations: $(echo "$line" | grep -oE '!pcf\.[A-Za-z_]+' | tr '\n' ', ' | sed 's/,$//')"
         echo ""
     fi
-done
+done < <(grep -E 'define .* @' server.ll)
 
 echo ""
 echo "--- SMT Specifications ---"
 echo ""
 
 # Extract SMT assertions from metadata
-grep -A2 'pcf\.pre\|pcf\.post' server.ll | grep -oP '"smt".*' | while read -r smt; do
+grep -A2 -E 'pcf\.pre|pcf\.post' server.ll | sed -nE 's/.*("smt".*)/\1/p' | while IFS= read -r smt; do
     echo "  $smt"
     echo ""
 done
@@ -74,8 +74,8 @@ echo ""
 
 # Check for completeness
 INCOMPLETE=0
-grep -E 'define .* @' server.ll | while read -r line; do
-    func_name=$(echo "$line" | grep -oP '@\w+' | head -1)
+while IFS= read -r line; do
+    func_name=$(echo "$line" | sed -nE 's/.*(@[A-Za-z_][A-Za-z0-9_.]*).*/\1/p')
     has_pre=$(echo "$line" | grep -c 'pcf\.pre' || true)
     has_post=$(echo "$line" | grep -c 'pcf\.post' || true)
     has_proof=$(echo "$line" | grep -c 'pcf\.proof' || true)
@@ -86,7 +86,7 @@ grep -E 'define .* @' server.ll | while read -r line; do
             INCOMPLETE=1
         fi
     fi
-done
+done < <(grep -E 'define .* @' server.ll)
 
 if [ "$INCOMPLETE" -eq 0 ]; then
     echo "  ✓ All PCFs have complete annotations (pre + post + proof)"

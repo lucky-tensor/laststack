@@ -5,12 +5,12 @@
 A LastStack demonstration featuring a minimal HTTP server that serves:
 1. A static HTML page
 2. A WebAssembly binary containing a fractal generation algorithm
-3. The client renders the fractal in the browser using the WASM module
+3. The client renders a generative fractal animation in the browser using repeated WASM calculations
 
 This demo showcases:
 - **LastStack server** - HTTP server written in LLVM IR with PCF metadata
 - **WASM with proofs** - Fractal algorithm in WebAssembly with correctness guarantees
-- **Post-human web stack** - End-to-end verified software from server to client rendering
+- **Time-bounded generative animation** - 10 Hz frame cadence for 60 seconds (600 frames)
 
 ---
 
@@ -24,7 +24,8 @@ This demo showcases:
 │  │  (index)    │    │     (fractal.wasm)               │   │
 │  └─────────────┘    └──────────────────────────────────┘   │
 │         │                                               │   │
-│         │           Renders fractal to <canvas>         │   │
+│         │     Renders 10 Hz fractal animation           │   │
+│         │         (60s, then auto-stop)                │   │
 └─────────│───────────────────────────────────────────────┘───│────────────
           │                                                     │
           │ Fetches                                           │
@@ -69,13 +70,16 @@ An HTTP server written in LLVM IR that serves static files. Extends the current 
 Minimal HTML page that:
 1. Loads the WASM module
 2. Creates a canvas element for rendering
-3. Calls the WASM fractal function to generate fractal data
-4. Renders the fractal pixels to the canvas
+3. Executes a timed animation loop at 10 Hz
+4. Calls the WASM fractal function every frame
+5. Renders each generated frame to the canvas
+6. Stops automatically after 60 seconds
 
 **Features:**
 - Full-viewport canvas
-- Dark theme matching LastStack aesthetic
-- WASM initialization and error handling
+- 10 Hz deterministic frame cadence
+- Fixed runtime budget: 60 seconds
+- WASM initialization, frame diagnostics, and graceful stop
 
 ### 3. WebAssembly Fractal Module
 
@@ -83,7 +87,7 @@ Minimal HTML page that:
 
 A WebAssembly module implementing a fractal generation algorithm.
 
-**Algorithm:** Mandelbrot set with configurable parameters
+**Algorithm:** Mandelbrot set with frame-varying parameters
 
 **WASM Interface:**
 ```wasm
@@ -99,6 +103,13 @@ A WebAssembly module implementing a fractal generation algorithm.
 (func $get_buffer_size (export "get_buffer_size") (result i32))
 (func $free_buffer (export "free_buffer") (param i32))
 ```
+
+**Animation Contract:**
+- Frame rate target: `10 Hz` (one frame every `100 ms`)
+- Total runtime: `60 s`
+- Total frame budget: `600` frames
+- Each frame must invoke `generate_fractal(...)` and render the returned buffer
+- Frame parameters are generative and deterministic from `frame_index` (for example `max_iter = 64 + (frame_index mod 192)`)
 
 **Metadata annotations:**
 - `@pre` - width, height > 0, max_iter > 0
@@ -134,13 +145,16 @@ clang --target=wasm32 -O3 -nostdlib -Wl,--export-all fractal.c -o fractal.wasm
 - File: `public/index.html`
 - Canvas element with full viewport
 - Fetch and instantiate WASM module
-- Animation loop for rendering
-- LastStack-styled dark theme
+- Timed animation loop: 100ms interval (10 Hz)
+- Auto-stop after 600 frames / 60 seconds
 
 **Step 2.2: Add JavaScript rendering**
+- For each frame `f` in `[0, 599]`, compute frame parameters from `f`
+- Call `generate_fractal(width, height, frame_max_iter)`
 - Read pixel buffer from WASM memory
 - Draw to canvas using ImageData
-- Implement pan/zoom controls (optional)
+- Ensure visible output (alpha channel normalization to 255 if needed)
+- Display simple diagnostics: frame count, elapsed time
 
 ### Phase 3: LastStack Server Enhancement
 
@@ -169,7 +183,8 @@ clang --target=wasm32 -O3 -nostdlib -Wl,--export-all fractal.c -o fractal.wasm
 - Start server
 - Fetch index.html
 - Fetch fractal.wasm
-- Verify fractal renders in browser
+- Verify animation renders at ~10 Hz and stops at 60 s
+- Verify exactly 600 frames are attempted (±1 due timer drift)
 
 **Step 4.3: Metadata verification**
 - Run `verify.sh` to confirm PCF metadata intact
@@ -213,13 +228,15 @@ For each pixel (x, y) in the image:
 
 ### Parameters
 - Default viewport: x ∈ [-2.5, 1.0], y ∈ [-1.5, 1.5]
-- Default max_iter: 100
+- Frame max_iter: deterministic function of frame index
 - Default resolution: canvas size (responsive)
+- Animation cadence: 100 ms/frame
+- Animation duration: 60 s
 
 ### Output Format
 - RGBA pixels (4 bytes per pixel)
 - Buffer layout: `[R, G, B, A, R, G, B, A, ...]`
-- Alpha always 255 (fully opaque)
+- Client normalizes alpha to 255 before draw if module output alpha is 0
 
 ---
 
@@ -229,10 +246,12 @@ For each pixel (x, y) in the image:
 2. ✅ GET / returns index.html with 200 OK
 3. ✅ GET /fractal.wasm returns WASM binary with correct Content-Type
 4. ✅ HTML loads and instantiates WASM without errors
-5. ✅ Fractal renders correctly in browser
-6. ✅ Server binary includes PCF metadata
-7. ✅ Metadata survives optimization passes
-8. ✅ All components have appropriate @invariant / @pre / @post annotations
+5. ✅ Browser renders animated fractal frames generated from WASM output
+6. ✅ Animation runs for 60 seconds at 10 Hz target cadence
+7. ✅ Animation stops automatically after frame budget is exhausted
+8. ✅ Server binary includes PCF metadata
+9. ✅ Metadata survives optimization passes
+10. ✅ All components have appropriate @invariant / @pre / @post annotations
 
 ---
 
@@ -249,6 +268,6 @@ For each pixel (x, y) in the image:
 
 - Interactive pan/zoom of fractal
 - Multiple fractal types (Julia, Burning Ship)
-- Progressive rendering (low-res preview → high-res)
+- Progressive fidelity ramp across frames
 - WebGL rendering for performance
 - Server-side rendering option
