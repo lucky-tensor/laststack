@@ -3,164 +3,65 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>LastStack Fractal Animation POC</title>
+  <title>LastStack • fractal.wasm</title>
   <style>
-    body {
-      margin: 0;
-      padding: 16px;
-      font-family: monospace;
-      background: #f5f5f5;
-      color: #111;
-    }
-    h1 {
-      margin: 0 0 8px 0;
-      font-size: 20px;
-    }
-    p {
-      margin: 0 0 12px 0;
-    }
-    canvas {
-      display: block;
-      width: 100%;
-      max-width: 960px;
-      height: auto;
-      border: 1px solid #222;
-      background: #000;
-      image-rendering: pixelated;
-    }
-    pre {
-      margin-top: 12px;
-      padding: 8px;
-      background: #fff;
-      border: 1px solid #ddd;
-      white-space: pre-wrap;
-      max-width: 960px;
-    }
+    :root { color-scheme: light; }
+    body { margin: 0; padding: 12px; font-family: monospace; background: #f8f8f8; }
+    header { margin-bottom: 8px; }
+    h1 { margin: 0; font-size: 18px; }
+    small { color: #444; }
+    canvas { width: 100%; max-width: 960px; border: 1px solid #222; background: #000; image-rendering: pixelated; display: block; }
+    #status { margin-top: 8px; white-space: pre; }
   </style>
 </head>
 <body>
-  <h1>LastStack WASM Animation (POC)</h1>
-  <p>Generative animation using fractal.wasm at 10 Hz for 60 seconds.</p>
+  <header>
+    <h1>fractal.wasm</h1>
+    <small>Pixels come straight from WASM; JS only blits to canvas.</small>
+  </header>
   <canvas id="canvas" width="640" height="360"></canvas>
-  <pre id="status">Loading...</pre>
+  <pre id="status">Loading wasm…</pre>
 
   <script>
-    const FRAME_INTERVAL_MS = 100; // 10 Hz
-    const DURATION_MS = 60_000; // 60 seconds
-    const MAX_FRAMES = DURATION_MS / FRAME_INTERVAL_MS; // 600
-    const WASM_PAGE_SIZE = 65536;
-    const RENDER_WIDTH = 320;
-    const RENDER_HEIGHT = 180;
+    const WIDTH = 640;
+    const HEIGHT = 360;
+    const STATUS = document.getElementById('status');
+    const ctx = document.getElementById('canvas').getContext('2d');
 
-    const canvas = document.getElementById('canvas');
-    const ctx = canvas.getContext('2d');
-    const statusEl = document.getElementById('status');
+    const set = (msg) => STATUS.textContent = msg;
 
-    function setStatus(text) {
-      statusEl.textContent = text;
-    }
-
-    function ensureCapacity(memory, requiredBytes) {
-      if (memory.buffer.byteLength >= requiredBytes) return true;
-      const pagesToGrow = Math.ceil((requiredBytes - memory.buffer.byteLength) / WASM_PAGE_SIZE);
-      try {
-        memory.grow(pagesToGrow);
-        return true;
-      } catch {
-        return false;
-      }
-    }
-
-    function buildFrame(src, frameIndex, out) {
-      // We derive visible RGB values from raw WASM bytes + time so animation remains visible
-      // even when the module emits low-variance data.
-      const t = frameIndex & 255;
-      for (let i = 0; i < out.length; i += 4) {
-        const wasmR = src[i] || 0;
-        const wasmG = src[i + 1] || 0;
-        const wasmB = src[i + 2] || 0;
-        const p = (i >> 2) & 255;
-
-        out[i] = (wasmR + t + p) & 255;
-        out[i + 1] = (wasmG + (t * 3) + ((p * 7) & 255)) & 255;
-        out[i + 2] = (wasmB + (t * 5) + ((p * 13) & 255)) & 255;
-        out[i + 3] = 255;
-      }
+    function ensureMemory(memory, bytes) {
+      const page = 65536;
+      const need = Math.ceil((bytes - memory.buffer.byteLength) / page);
+      if (need > 0) memory.grow(need);
     }
 
     async function main() {
       try {
-        const wasmBytes = await fetch('/fractal.wasm').then((response) => {
-          if (!response.ok) throw new Error('Failed to fetch /fractal.wasm');
-          return response.arrayBuffer();
-        });
-        const { instance } = await WebAssembly.instantiate(wasmBytes, {});
+        const res = await fetch('/fractal.wasm');
+        if (!res.ok) throw new Error('fetch /fractal.wasm failed');
+        const bytes = await res.arrayBuffer();
+        const { instance } = await WebAssembly.instantiate(bytes, {});
         const wasm = instance.exports;
 
-        const expectedBytes = (RENDER_WIDTH * RENDER_HEIGHT * 4) + 4;
-        if (!ensureCapacity(wasm.memory, expectedBytes)) {
-          throw new Error('Unable to grow WASM memory');
-        }
-
-        const imageData = ctx.createImageData(RENDER_WIDTH, RENDER_HEIGHT);
-        const outputPixels = imageData.data;
-        const offscreen = document.createElement('canvas');
-        offscreen.width = RENDER_WIDTH;
-        offscreen.height = RENDER_HEIGHT;
-        const offscreenCtx = offscreen.getContext('2d');
+        ensureMemory(wasm.memory, WIDTH * HEIGHT * 4);
+        const frameData = ctx.createImageData(WIDTH, HEIGHT);
 
         let frame = 0;
-        let timerId = null;
-        const start = performance.now();
-
-        const renderFrame = () => {
-          const elapsed = performance.now() - start;
-          if (frame >= MAX_FRAMES || elapsed >= DURATION_MS) {
-            if (timerId !== null) clearInterval(timerId);
-            setStatus(
-              `Complete\n` +
-              `frames=${frame}/${MAX_FRAMES}\n` +
-              `elapsed_ms=${Math.round(elapsed)}`
-            );
-            return;
-          }
-
-          const maxIter = 64 + (frame % 192);
-          const ptr = wasm.generate_fractal(RENDER_WIDTH, RENDER_HEIGHT, maxIter);
-          const bufSize = wasm.get_buffer_size();
-          if (ptr <= 0) {
-            throw new Error(`Frame ${frame}: invalid pointer ${ptr}`);
-          }
-
-          const expectedFrameBytes = RENDER_WIDTH * RENDER_HEIGHT * 4;
-          const copyLen = Math.min(bufSize, expectedFrameBytes);
-          if (ptr + copyLen > wasm.memory.buffer.byteLength) {
-            throw new Error(`Frame ${frame}: buffer out of bounds`);
-          }
-
-          const src = new Uint8Array(wasm.memory.buffer, ptr, copyLen);
-          buildFrame(src, frame, outputPixels);
-
-          offscreenCtx.putImageData(imageData, 0, 0);
-          ctx.imageSmoothingEnabled = false;
-          ctx.clearRect(0, 0, canvas.width, canvas.height);
-          ctx.drawImage(offscreen, 0, 0, canvas.width, canvas.height);
-
+        const tick = () => {
+          const maxIter = 32 + (frame % 224); // simple color drift over time
+          const ptr = wasm.generate_fractal(WIDTH, HEIGHT, maxIter);
+          const view = new Uint8Array(wasm.memory.buffer, ptr, WIDTH * HEIGHT * 4);
+          frameData.data.set(view);
+          ctx.putImageData(frameData, 0, 0);
+          set(`frame ${frame.toString().padStart(4, '0')}  max_iter ${maxIter}`);
           frame += 1;
-          setStatus(
-            `Running\n` +
-            `frame=${frame}/${MAX_FRAMES}\n` +
-            `elapsed_ms=${Math.round(elapsed)}\n` +
-            `target_hz=10\n` +
-            `max_iter=${maxIter}\n` +
-            `buf_size=${bufSize}`
-          );
+          requestAnimationFrame(tick);
         };
 
-        renderFrame(); // first frame immediately
-        timerId = setInterval(renderFrame, FRAME_INTERVAL_MS);
+        tick();
       } catch (err) {
-        setStatus(`Error: ${err.message}`);
+        set(`error: ${err.message}`);
       }
     }
 
