@@ -44,11 +44,6 @@ jobs:
         run: |
           bash run-benchmark.sh hyper 8081 hyper/target/release/laststack_plaintext_hyper
 
-      - name: Run Hyper baseline workload
-        working-directory: demo/plaintext
-        run: |
-          bash run-benchmark.sh hyper 8081 hyper/target/release/laststack_plaintext_hyper
-
       - name: Show benchmark summaries
         working-directory: demo/plaintext/artifacts
         run: |
