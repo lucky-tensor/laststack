@@ -20,10 +20,6 @@ target triple = "x86_64-pc-linux-gnu"
 @plaintext_response_len = private unnamed_addr constant i64 108
 @env_tfb_port = private unnamed_addr constant [9 x i8] c"TFB_PORT\00"
 @env_port = private unnamed_addr constant [5 x i8] c"PORT\00"
-@msg_listen = private unnamed_addr constant [48 x i8] c"[LastStack Plaintext] Listening on port %d\n\00"
-@msg_socket_fail = private unnamed_addr constant [31 x i8] c"[LastStack Plaintext] socket failed\n\00"
-@msg_bind_fail = private unnamed_addr constant [29 x i8] c"[LastStack Plaintext] bind failed\n\00"
-@msg_listen_fail = private unnamed_addr constant [31 x i8] c"[LastStack Plaintext] listen failed\n\00"
 
 ; External dependencies (libc / syscalls)
 declare i32 @socket(i32, i32, i32)
@@ -35,14 +31,13 @@ declare i64 @read(i32, i8*, i64)
 declare i64 @write(i32, i8*, i64)
 declare i32 @close(i32)
 declare i32 @htons(i32)
-declare i32 @printf(i8*, ...)
 declare i8* @getenv(i8*)
 declare i32 @atoi(i8*)
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
 
 define void @respond_plaintext(i32 %client_fd) !pcf.schema !30 !pcf.toolchain !31 !pcf.pre !1 !pcf.post !2 !pcf.proof !3 !pcf.effects !4 !pcf.bind !5 {
 entry:
-  %resp_ptr = getelementptr [97 x i8], [97 x i8]* @plaintext_response, i64 0, i64 0
+  %resp_ptr = getelementptr [108 x i8], [108 x i8]* @plaintext_response, i64 0, i64 0
   call i64 @write(i32 %client_fd, i8* %resp_ptr, i64 108)
   ret void
 }
@@ -86,7 +81,6 @@ port_ready:
   br i1 %socket_ok, label %setup_socket, label %socket_fail
 
 socket_fail:
-  call i32 @printf(i8* getelementptr inbounds ([31 x i8], [31 x i8]* @msg_socket_fail, i32 0, i32 0))
   ret i32 1
 
 setup_socket:
@@ -107,7 +101,6 @@ setup_socket:
   br i1 %bind_ok, label %listen_block, label %bind_fail
 
 bind_fail:
-  call i32 @printf(i8* getelementptr inbounds ([29 x i8], [29 x i8]* @msg_bind_fail, i32 0, i32 0))
   ret i32 1
 
 listen_block:
@@ -116,11 +109,9 @@ listen_block:
   br i1 %listen_ok, label %announce_port, label %listen_fail_block
 
 listen_fail_block:
-  call i32 @printf(i8* getelementptr inbounds ([31 x i8], [31 x i8]* @msg_listen_fail, i32 0, i32 0))
   ret i32 1
 
 announce_port:
-  call i32 @printf(i8* getelementptr inbounds ([48 x i8], [48 x i8]* @msg_listen, i32 0, i32 0), i32 %port_phi)
   br label %accept_loop
 
 accept_loop:
@@ -135,23 +126,23 @@ handle_client_block:
 
 ; PCF metadata definitions
 
-!1 = !{"pcf.pre", !"smt", !"(assert (bvsge client_fd #x00000000))"}
-!2 = !{"pcf.post", !"smt", !"(assert true)"}
-!3 = !{"pcf.proof", !"witness", !"strategy: constant-response from static buffer"}
-!4 = !{"pcf.effects", !"libc.write,global.read:@plaintext_response"}
-!5 = !{"pcf.bind", !"client_fd->arg:%client_fd"}
+!1 = !{!"pcf.pre", !"smt", !"(assert (bvsge client_fd #x00000000))"}
+!2 = !{!"pcf.post", !"smt", !"(assert true)"}
+!3 = !{!"pcf.proof", !"witness", !"strategy: constant-response from static buffer"}
+!4 = !{!"pcf.effects", !"libc.write,global.read:@plaintext_response"}
+!5 = !{!"pcf.bind", !"client_fd->arg:%client_fd"}
 
-!6 = !{"pcf.pre", !"smt", !"(assert (bvsge client_fd #x00000000))"}
-!7 = !{"pcf.post", !"smt", !"(assert true)"}
-!8 = !{"pcf.proof", !"witness", !"strategy: read-buff-then-respond-then-close"}
-!9 = !{"pcf.effects", !"libc.read,libc.write,libc.close,global.read:@plaintext_response"}
-!10 = !{"pcf.bind", !"client_fd->arg:%client_fd"}
+!6 = !{!"pcf.pre", !"smt", !"(assert (bvsge client_fd #x00000000))"}
+!7 = !{!"pcf.post", !"smt", !"(assert true)"}
+!8 = !{!"pcf.proof", !"witness", !"strategy: read-buff-then-respond-then-close"}
+!9 = !{!"pcf.effects", !"libc.read,libc.write,libc.close,global.read:@plaintext_response"}
+!10 = !{!"pcf.bind", !"client_fd->arg:%client_fd"}
 
-!11 = !{"pcf.pre", !"smt", !"(assert true)"}
-!12 = !{"pcf.post", !"smt", !"(assert (or (= exit_code #x00000000) (= exit_code #x00000001)))"}
-!13 = !{"pcf.proof", !"witness", !"strategy: socket-bind-listen-accept loop"}
-!14 = !{"pcf.effects", !"libc.socket,libc.setsockopt,libc.bind,libc.listen,libc.accept,libc.close,libc.printf,libc.getenv,libc.atoi,libc.htons"}
-!15 = !{"pcf.bind", !"ret->exit_code"}
+!11 = !{!"pcf.pre", !"smt", !"(assert true)"}
+!12 = !{!"pcf.post", !"smt", !"(assert (or (= exit_code #x00000000) (= exit_code #x00000001)))"}
+!13 = !{!"pcf.proof", !"witness", !"strategy: socket-bind-listen-accept loop"}
+!14 = !{!"pcf.effects", !"libc.socket,libc.setsockopt,libc.bind,libc.listen,libc.accept,libc.close,libc.getenv,libc.atoi,libc.htons"}
+!15 = !{!"pcf.bind", !"ret->exit_code"}
 
-!30 = !{"pcf.schema", !"laststack.pcf.v1"}
-!31 = !{"pcf.toolchain", !"checker:tfb-plaintext"}
+!30 = !{!"pcf.schema", !"laststack.pcf.v1"}
+!31 = !{!"pcf.toolchain", !"checker:tfb-plaintext"}
