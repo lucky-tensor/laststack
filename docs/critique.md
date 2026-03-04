@@ -99,7 +99,7 @@ Recommendation:
 ## Evidence Check Against Current Branch
 
 From current branch implementation:
-- `demo/build.sh` now includes verification gate, link-gate, IPS prototype build, and artifact sealing steps.
+- `demo/build.sh` now includes verification gate, link-gate, IPS LLVM runtime build, IPS evidence checks, and artifact sealing steps.
 - `demo/verify.sh` is fail-closed and emits machine-readable JSON.
 - `demo/fractal.ll` includes PCF metadata on exported functions in this branch state.
 - `demo/server.ll` includes broader PCF coverage and effect/bind metadata in this branch state.

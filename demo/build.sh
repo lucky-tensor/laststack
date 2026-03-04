@@ -131,20 +131,30 @@ echo "[LastStack Build] Step 7: Running link gate..."
 bash link-gate.sh --verify-report verification-report.json --json link-gate-report.json
 echo "[LastStack Build]   ✓ Link gate report: $SCRIPT_DIR/link-gate-report.json"
 
-# Step 8: Build IPS prototype runtime
+# Step 8: Build IPS runtime (LLVM IR only)
 echo ""
-echo "[LastStack Build] Step 8: Building IPS prototype runtime..."
-if [ -f ips-prototype.c ] && [ -n "$CLANG" ]; then
-    "$CLANG" -O2 ips-prototype.c -o laststack-ips 2>&1
-    echo "[LastStack Build]   ✓ Built $SCRIPT_DIR/laststack-ips"
-else
-    echo "[LastStack Build]   ⚠ Skipped (ips-prototype.c or clang unavailable)"
+echo "[LastStack Build] Step 8: Building IPS runtime..."
+if [ ! -f ips.ll ]; then
+    echo "[LastStack Build]   ✗ Missing ips.ll"
+    exit 1
 fi
+if [ -z "$CLANG" ]; then
+    echo "[LastStack Build]   ✗ Missing clang; cannot build ips.ll"
+    exit 1
+fi
+"$CLANG" -O2 ips.ll -o laststack-ips 2>&1
+echo "[LastStack Build]   ✓ Built $SCRIPT_DIR/laststack-ips"
 
-# Step 9: Artifact seal + TCB capture
+# Step 9: IPS evidence gate
 echo ""
-echo "[LastStack Build] Step 9: Sealing artifacts..."
-bash seal-artifacts.sh --verify-report verification-report.json --link-report link-gate-report.json --out artifacts/manifest.json
+echo "[LastStack Build] Step 9: Running IPS evidence checks..."
+bash ips-evidence.sh --bin ./laststack-ips --json ips-report.json
+echo "[LastStack Build]   ✓ IPS report: $SCRIPT_DIR/ips-report.json"
+
+# Step 10: Artifact seal + TCB capture
+echo ""
+echo "[LastStack Build] Step 10: Sealing artifacts..."
+bash seal-artifacts.sh --verify-report verification-report.json --link-report link-gate-report.json --ips-report ips-report.json --out artifacts/manifest.json
 echo "[LastStack Build]   ✓ Artifact manifest: $SCRIPT_DIR/artifacts/manifest.json"
 
 # Report
@@ -160,5 +170,5 @@ echo ""
 
 echo ""
 echo "[LastStack Build] To run: ./laststack-server"
-echo "[LastStack Build] IPS demo: ./laststack-ips /tmp/ips-state.bin init && ./laststack-ips /tmp/ips-state.bin add 1"
+echo "[LastStack Build] IPS demo: ./laststack-ips /tmp/ips-state.bin init && ./laststack-ips /tmp/ips-state.bin add 1 && ./laststack-ips /tmp/ips-state.bin recover"
 echo "[LastStack Build] Then visit: http://localhost:9090"
