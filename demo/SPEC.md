@@ -319,11 +319,69 @@ Under concurrent load with keep-alive Caddy scales much better (see below).
 
 ---
 
-## State-of-the-Art Concurrency Strategies
+## Concurrency and Parallelization Strategy
 
-The current server is **single-threaded, synchronous, no keep-alive**. The following
-strategies are used by production servers (nginx, lighttpd, h2o) to reach
-100,000–1,000,000+ RPS on commodity hardware.
+Three layers, ordered by impact-to-complexity ratio. Each layer is independent and
+additive — they compose to reach the full nginx-class architecture.
+
+### Layer 1 — Pre-fork workers + SO_REUSEPORT ✅ implemented
+
+Fork `nproc` workers before the accept loop. Each worker runs the existing optimized
+hot path independently on the same listening socket. `SO_REUSEPORT` (Linux 3.9+) tells
+the kernel to distribute incoming connections across all workers with no userspace lock.
+
+```
+main: socket → bind → setsockopt(SO_REUSEPORT) → listen → load_assets
+      for i in 0..nproc: fork → child runs accept_loop
+      parent: wait() loop
+```
+
+Each worker is a copy-on-write clone of the parent. The prebuilt response globals
+(`@html_resp`, `@wasm_resp`) are read-only after `load_assets`, so they map to the same
+physical pages across all workers — zero memory overhead per worker for response data.
+
+**Expected gain:** near-linear with core count. 40-core machine → theoretical 40× single-core RPS.
+
+### Layer 2 — HTTP keep-alive (planned)
+
+Every request currently pays ~80 µs in TCP handshake overhead. Keep-alive reuses the
+connection across multiple requests:
+
+```
+serve_html/wasm: write response
+                 read next request on same fd
+                 loop until Connection: close or bytes_read == 0
+```
+
+**Implementation in server.ll:** `handle_client` becomes a loop; parse `Connection:` header
+to decide teardown. The prebuilt response globals already omit `Connection: close` once
+this is toggled.
+
+**Expected gain:** 3–5× per worker on top of Layer 1.
+
+### Layer 3 — epoll event loop per worker (planned)
+
+A blocking `accept → handle_client → accept` chain means one slow client stalls all
+others queued behind it in the same worker. An epoll loop lets each worker handle
+thousands of concurrent connections:
+
+```
+epoll_create → add listen_fd
+loop: epoll_wait → for each ready fd: accept or read/write
+```
+
+**Implementation in server.ll:** requires `epoll_create1`, `epoll_ctl`, `epoll_wait`
+declarations, non-blocking socket (`O_NONBLOCK`), and a per-connection state machine.
+
+**Expected gain:** critical for slow clients or long-lived connections; less significant
+for the fast loopback benchmark.
+
+---
+
+## State-of-the-Art Concurrency Strategies (reference)
+
+Production servers (nginx, lighttpd, h2o) reach 100,000–1,000,000+ RPS on commodity
+hardware by combining all three layers above. Additional micro-optimizations:
 
 ### 1. HTTP Keep-Alive (Connection Reuse)
 
