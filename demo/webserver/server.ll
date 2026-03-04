@@ -41,7 +41,7 @@
 ;     sys:proc   process calls     (fork, wait, sysconf)
 ;     io:stdout  stdio             (printf)
 ;
-; Performance optimizations (see docs/demo-spec.md):
+; Performance optimizations (see spec.md):
 ;   1. Asset caching     — files read once at startup into global buffers;
 ;                          complete HTTP responses (header+body) prebuilt.
 ;   2. Zero per-request  — no snprintf, no memset, no open/read/close,
@@ -201,7 +201,7 @@ declare i32 @wait(i32*)
 ; @proof     constant-propagation: total = sum(strlen(each constant)), QED
 ; ============================================================================
 
-define i64 @build_response(i8* %buf) !pcf.pre !1 !pcf.post !2 !pcf.proof !3 {
+define i64 @build_response(i8* %buf) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !1 !pcf.post !2 !pcf.proof !3 !pcf.effects !16 !pcf.bind !17 {
 entry:
   %offset = alloca i64
   store i64 0, i64* %offset
@@ -287,7 +287,7 @@ entry:
 ; @proof     case-analysis: read_open calls @close before ret; file_fail never opens fd. QED
 ; ============================================================================
 
-define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) {
+define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !18 !pcf.post !19 !pcf.proof !20 !pcf.effects !21 !pcf.bind !22 {
 entry:
   %fd = call i32 @open(i8* %path, i32 0)
   %fd_ok = icmp sge i32 %fd, 0
@@ -315,7 +315,7 @@ file_fail:
 ; @post      return points to a valid null-terminated Content-Type header line (compile-time constant)
 ; ============================================================================
 
-define i8* @get_content_type(i8* %path) {
+define i8* @get_content_type(i8* %path) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !23 !pcf.post !24 !pcf.proof !25 !pcf.effects !26 !pcf.bind !27 {
 entry:
   %wasm_suffix  = getelementptr [6 x i8], [6 x i8]* @str_wasm, i64 0, i64 0
   %is_wasm_ptr  = call i8* @strstr(i8* %path, i8* %wasm_suffix)
@@ -346,7 +346,7 @@ ret_html:
 ; @proof     runtime-assertion: checks are redundant given caller's proof. QED
 ; ============================================================================
 
-define void @check_invariants(i8* %response_buf, i64 %response_len) !pcf.pre !4 !pcf.post !5 !pcf.proof !6 {
+define void @check_invariants(i8* %response_buf, i64 %response_len) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !4 !pcf.post !5 !pcf.proof !6 !pcf.effects !28 !pcf.bind !29 {
 entry:
   %inv1 = icmp sgt i64 %response_len, 0
   %inv2 = icmp ne i8* %response_buf, null
@@ -378,7 +378,7 @@ invariants_fail:
 ; @proof     each @read_file result is checked against > 0; return 0 only when both assets load. QED
 ; ============================================================================
 
-define i32 @load_assets() !pcf.pre !13 !pcf.post !14 !pcf.proof !15 {
+define i32 @load_assets() !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !13 !pcf.post !14 !pcf.proof !15 !pcf.effects !30 !pcf.bind !31 {
 entry:
   %file_buf   = getelementptr [262144 x i8], [262144 x i8]* @file_load_buf, i64 0, i64 0
   %hdr_fmt    = getelementptr [62 x i8], [62 x i8]* @fmt_header_200, i64 0, i64 0
@@ -442,7 +442,7 @@ asset_fail:
 ; @proof     case-analysis: all three serve paths call @close before ret. QED
 ; ============================================================================
 
-define void @handle_client(i32 %client_fd) !pcf.pre !7 !pcf.post !8 !pcf.proof !9 {
+define void @handle_client(i32 %client_fd) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !7 !pcf.post !8 !pcf.proof !9 !pcf.effects !32 !pcf.bind !33 {
 entry:
   ; Read into global buffer (single-threaded: no concurrent access)
   %req_ptr    = getelementptr [1025 x i8], [1025 x i8]* @req_buf, i64 0, i64 0
@@ -499,7 +499,7 @@ serve_404:
 ; @proof     case-analysis: 4 error exits close sockfd and return 1; success path loops forever. QED
 ; ============================================================================
 
-define i32 @main() !pcf.pre !10 !pcf.post !11 !pcf.proof !12 {
+define i32 @main() !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !10 !pcf.post !11 !pcf.proof !12 !pcf.effects !34 !pcf.bind !35 {
 entry:
   %sockfd  = call i32 @socket(i32 2, i32 1, i32 0)
   %sock_ok = icmp sge i32 %sockfd, 0
@@ -635,6 +635,11 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
          result > 0 because all constants are non-empty
          qed"}
 
+!16 = !{!"pcf.effects",
+        !"libc.strlen,llvm.memcpy,global.read:@http_status,@http_content_type,@http_content_length,@content_length_str,@http_crlf,@http_connection_close,@html_body"}
+!17 = !{!"pcf.bind",
+        !"buf->arg:%buf,result->ret"}
+
 ; check_invariants precondition
 !4 = !{!"pcf.pre", !"smt",
        !"(declare-const response_buf (_ BitVec 64))
@@ -651,6 +656,49 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
          invariants-checked-at-runtime
          failure-branch-unreachable-given-load_assets-postcondition
          qed"}
+
+!18 = !{!"pcf.pre", !"smt",
+        !"(declare-const path (_ BitVec 64))
+          (declare-const buf (_ BitVec 64))
+          (declare-const buf_size (_ BitVec 64))
+          (assert (not (= path #x0000000000000000)))
+          (assert (not (= buf #x0000000000000000)))
+          (assert (bvugt buf_size #x0000000000000000))"}
+!19 = !{!"pcf.post", !"smt",
+        !"(declare-const result (_ BitVec 64))
+          (assert (or (= result #xffffffffffffffff) (bvuge result #x0000000000000000)))"}
+!20 = !{!"pcf.proof", !"witness",
+        !"strategy: case-analysis
+          if open fails -> return -1
+          if open succeeds -> read then close then return bytes
+          fd is closed on success path
+          qed"}
+!21 = !{!"pcf.effects",
+        !"sys.open,sys.read,sys.close,global.read:none,global.write:none"}
+!22 = !{!"pcf.bind",
+        !"path->arg:%path,buf->arg:%buf,buf_size->arg:%buf_size,result->ret"}
+
+!23 = !{!"pcf.pre", !"smt",
+        !"(declare-const path (_ BitVec 64))
+          (assert (not (= path #x0000000000000000)))"}
+!24 = !{!"pcf.post", !"smt",
+        !"(declare-const result (_ BitVec 64))
+          (assert (not (= result #x0000000000000000)))"}
+!25 = !{!"pcf.proof", !"witness",
+        !"strategy: branch-complete
+          wasm suffix match returns content_type_wasm
+          else returns content_type_html
+          both branches return non-null static pointers
+          qed"}
+!26 = !{!"pcf.effects",
+        !"libc.strstr,global.read:@str_wasm,@content_type_wasm,@content_type_html"}
+!27 = !{!"pcf.bind",
+        !"path->arg:%path,result->ret"}
+
+!28 = !{!"pcf.effects",
+        !"libc.printf,global.read:@msg_invariant_ok"}
+!29 = !{!"pcf.bind",
+        !"response_buf->arg:%response_buf,response_len->arg:%response_len"}
 
 ; handle_client precondition
 !7 = !{!"pcf.pre", !"smt",
@@ -672,6 +720,29 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
          case serve_404:  write(response_404, 99)        then close(fd)
          all-cases-covered, fd-always-closed
          qed"}
+
+!30 = !{!"pcf.effects",
+        !"libc.printf,libc.snprintf,sys.open,sys.read,sys.close,llvm.memcpy,global.read:@path_index,@path_wasm,@fmt_header_200,@content_type_html,@content_type_wasm,global.write:@html_resp,@html_resp_len,@wasm_resp,@wasm_resp_len"}
+!31 = !{!"pcf.bind",
+        !"result->ret"}
+
+!32 = !{!"pcf.effects",
+        !"sys.read,libc.strstr,sys.write,sys.close,global.read:@req_fractal,@html_resp,@html_resp_len,@wasm_resp,@wasm_resp_len,@response_404,@response_404_len,global.write:@req_buf"}
+!33 = !{!"pcf.bind",
+        !"client_fd->arg:%client_fd"}
+
+!34 = !{!"pcf.effects",
+        !"sys.socket,sys.setsockopt,sys.bind,sys.listen,sys.accept,sys.close,sys.fork,sys.wait,libc.printf,libc.sysconf,global.read:@msg_start,@msg_error_socket,@msg_error_bind,@msg_error_listen"}
+!35 = !{!"pcf.bind",
+        !"exit_code->ret,sockfd->state:%sockfd"}
+
+!36 = !{!"pcf.schema",
+        !"laststack.pcf.v1"}
+
+!37 = !{!"pcf.toolchain",
+        !"checker:laststack-verify-gate",
+        !"version:0.1.0",
+        !"hash:dev"}
 
 ; main precondition
 !10 = !{!"pcf.pre", !"smt", !"(assert true)"}

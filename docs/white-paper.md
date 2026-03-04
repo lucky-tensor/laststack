@@ -1,229 +1,206 @@
-# The Last Stack: Final Architecture for Agent-Native Software
+# The Last Stack: Reconciled Architecture for Agent-Native Software
 
-**Version 1.0 - March 2026**
+**Version 1.2 - March 2026**
 
 ## Abstract
 
-LastStack defines a single end-state architecture for software built primarily by coding agents. The core claim is simple: source, verification, and deployment should all operate on one machine-native representation, LLVM IR, with proofs attached to every exported behavior. Text is documentation, not authority. Build success means contracts are discharged, effects are declared, and artifacts are reproducible. This document specifies that final architecture directly, including trust boundaries, runtime model, and proof requirements.
+LastStack targets one architecture: executable behavior authored in LLVM IR, machine-checkable contracts attached to exported behavior, and release artifacts gated by verification. This revision reconciles two active lines of work in this repository:
+- Structural graph comments and extraction tooling now present on `master`.
+- Formal verification semantics (effects, bindings, proof artifacts, link gate, artifact sealing) proposed in parallel.
 
-## 1. Problem Statement
+The result is a single coherent specification grounded in measured repository state.
 
-Current software stacks optimize for human authoring:
-- Text files as canonical source.
-- Implicit semantics distributed across compilers, tests, and conventions.
-- Correctness inferred from sampled execution.
-- Runtime behavior validated post hoc in production.
+## 1. Empirical Baseline (Repository State)
 
-For agent-driven implementation, this creates recurring failure modes:
-- Reconstructing structure from text on every turn.
-- Weak guarantees at module boundaries.
-- Drift between documentation, code, and verification artifacts.
-- High verification cost paid late in the cycle.
+Baseline commit for this assessment: `fbf810c` (`master`, March 4, 2026).
 
-LastStack removes these mismatches by making verification and structure first-class properties of the build graph.
+Observed facts:
+- `demo/webserver/server.ll` and `demo/webserver/fractal.ll` include structured graph comments (`@module`, `@fn`, `@calls`, `@reads`, etc.).
+- `tools/extract-graph` parses those comments into JSON and summary views.
+- `demo/webserver/server.ll` contains PCF metadata on 5 of 7 functions.
+- `demo/webserver/fractal.ll` exports are currently unannotated as PCFs.
+- No `!pcf.effects` or `!pcf.bind` metadata exists in `master` demo IR.
+- `demo/webserver/verify.sh` is report-oriented and not a fail-closed proof gate.
+- Build/CI have no enforced link gate, artifact sealing manifest, or TCB capture.
+- CI benchmark reporting is operational via `k6-summary` artifacts.
 
-### 1.1 Agent Interface Constraints (Today)
+This baseline is the evidence foundation for the architecture below.
 
-The architecture is designed for current LLM-based agents, not hypothetical future models. Today:
-- Agents read and write text files through sequential token streams.
-- Agents reason primarily over local spans and diffs, then stitch global behavior from repeated passes.
-- Agents cannot reliably "mount" a full external knowledge graph as native working memory; they reconstruct task-specific graphs from code each session.
-- Agents need explicit semantics (contracts, effects, invariants) attached to code to reduce ambiguity and search cost.
+## 2. Reconciled Thesis
 
-This is why LastStack does not introduce a new proprietary binary source format or AST-as-canonical-source model:
-- A binary source format is opaque to current language models and weak for review, diff, and patch workflows.
-- AST dumps still require parser/tooling mediation and often hide low-level execution semantics that matter for verification and codegen.
-- Current models operate in language order; giving them semantically rich text/IR with machine-checkable metadata fits how they actually work.
+LastStack is defined by four non-negotiable constraints:
 
-So the final architecture uses LLVM IR as canonical behavior, while keeping a text representation (`.ll`) as the agent-facing interface.
+1. **Canonical behavior is LLVM IR.**
+   Runtime semantics are defined by `.ll` modules and their compiled artifacts.
 
-## 2. Final Philosophy
+2. **Agent interface is text plus structure.**
+   Agents operate over sequential text; therefore structural graph comments remain first-class, extractable, and diffable.
 
-LastStack is defined by six rules:
+3. **Contracts are machine obligations, not prose.**
+   Exported behavior must carry verifiable pre/post/effect/bind/proof metadata.
 
-1. **One canonical representation.**
-   LLVM IR is the only authoritative source representation for executable behavior.
+4. **Release is gate-driven.**
+   Build success requires verification pass, link compatibility pass, and artifact seal generation.
 
-2. **Proof-carrying linkage.**
-   A function may be linked only when its contract and proof artifact pass machine verification.
+## 3. Architecture
 
-3. **Declared effects, not inferred intent.**
-   Every function declares external effects (syscalls, global writes, I/O classes, allocator use).
+### 3.1 Structural Graph Layer (Implemented on `master`)
 
-4. **Deterministic artifacts.**
-   Build outputs, proof outputs, and benchmark reports are reproducible from commit + toolchain digest.
+Source files embed graph comments directly in IR:
+- Node tags: `@module`, `@fn`, `@global`, `@type`
+- Edge tags: `@calls`, `@reads`, `@writes`, `@called-by`, `@uses-type`, `@exports`, `@emits`
+- Contract-adjacent tags: `@pre`, `@post`, `@inv`, `@proof`, `@cfg`
+
+`tools/extract-graph` is the canonical parser for this layer.
 
-5. **Typed persistent state with invariants.**
-   Persistent layouts are typed binary structures with invariants validated on mutation and recovery.
+Structural invariants:
+- Every declared edge must reference a declared node id.
+- `@calls` and `@called-by` must be logically consistent where both are present.
+- Extracted graph output is deterministic for a fixed file set and parser version.
 
-6. **Small explicit trust base.**
-   The trusted computing base (TCB) is versioned and auditable.
+### 3.2 Contract Layer (Required for Compliance)
 
-No staged migration model is part of this specification. This is the target architecture.
+Every exported PCF must include:
+- `pcf.schema` (required: `laststack.pcf.v1`)
+- `pcf.pre`
+- `pcf.post`
+- `pcf.effects`
+- `pcf.bind`
+- `pcf.proof`
+- `pcf.toolchain`
 
-## 3. Core Units
+#### 3.2.1 Effect Model
 
-### 3.1 Proof-Carrying Function (PCF)
+Canonical effect atoms:
+- `sys.<name>`
+- `libc.<name>`
+- `global.read:<symbol>`
+- `global.write:<symbol>`
+- `io.net.<op>`, `io.fs.<op>`
+- `nondet.clock`, `nondet.random`, `nondet.env`, `nondet.signal`
+- `alloc.heap`, `alloc.mmap`, `thread.spawn`, `thread.sync`
 
-A PCF is the atomic software unit:
-- LLVM IR function body.
-- Precondition and postcondition formulas.
-- Effect declaration.
-- Symbol binding map from formulas to SSA values and memory regions.
-- Proof witness.
-- Verifier metadata (solver/checker identity and digest).
+Matching rule:
+- `actual_effects <= declared_effects` (set inclusion)
+- Any unresolved atom (`effect.unknown:*`) is a release failure.
 
-A minimal interface shape:
+#### 3.2.2 Binding Model (`pcf.bind`)
 
-```llvm
-; define i32 @f(i32 %x) !pcf.pre !1 !pcf.post !2 !pcf.effects !3 !pcf.bind !4 !pcf.proof !5
-```
+Binding kinds:
+- `arg`, `ret`, `mem`, `state`, `exc`
 
-Required semantics:
-- `pcf.pre`: entry assumptions.
-- `pcf.post`: guarantees on normal and exceptional exits.
-- `pcf.effects`: exhaustive side effects.
-- `pcf.bind`: unambiguous mapping from contract symbols to SSA/memory entities.
-- `pcf.proof`: checkable witness or certificate reference.
+Binding invariants:
+- Every free symbol in `pcf.pre/post` resolves to exactly one binding.
+- Memory bindings use region identity `<base-object, [start,end), lifetime>`.
+- Alias groups are explicit.
+- Missing or ambiguous bindings fail verification.
 
-A PCF without complete metadata is non-linkable.
+#### 3.2.3 Proof Artifact Envelope
 
-### 3.2 Invariant-Preserving Structure (IPS)
+Required envelope fields (`lspc.v1`):
+- `format`, `goal_hash`, `method`, `checker`, `checker_hash`, `assumptions`, `result`
+- optional `signature`
 
-An IPS defines durable typed state:
-- Binary layout schema.
-- Invariant set over fields and relations.
-- Certified accessors/mutators (PCFs).
-- Recovery validation rules.
+Hashing/compatibility:
+- Canonical JSON encoding.
+- Default hash: SHA-256.
+- Proof validity requires matching `goal_hash`, schema, and checker digest.
 
-Mutation rule:
-- Every mutator must prove invariant preservation.
+### 3.3 Verification and Link Gate
 
-Recovery rule:
-- On restart, structure must validate checksum/version/invariants before exposure.
+Pipeline (fail-closed):
+1. Parse and canonicalize IR modules.
+2. Validate structural graph consistency.
+3. Validate PCF completeness on required functions.
+4. Materialize and check obligations (`pre/post/effects/bind/proof`).
+5. Run link gate on resolved call edges.
+6. Emit machine-readable verifier and link reports.
 
-### 3.3 Effect Surface
+Link gate rules per edge `caller -> callee`:
+- Schema compatibility.
+- Caller proves callee precondition at callsite.
+- Callee postcondition satisfies caller continuation assumptions.
+- Callee effects are allowed in caller context.
+- ABI and binding compatibility.
 
-Effects are part of the contract surface, not comments. At minimum:
-- Syscalls used.
-- Global memory writes.
-- Network/filesystem capabilities.
-- Nondeterministic inputs (clock, random, env).
+Reject on any failed condition.
 
-Effect mismatch between declaration and body is a hard verification failure.
+### 3.4 Artifact Seal and TCB Capture
 
-## 4. Architecture
+Every releasable build must emit a manifest containing:
+- commit SHA
+- IR file digests
+- proof artifact digests
+- verifier/link report digests
+- benchmark snapshot digest
+- toolchain and checker records (`path`, `version`, `sha256`)
 
-### 4.1 Build and Verification Graph
+TCB scope in manifest:
+- LLVM toolchain components used
+- verifier/checker binaries
+- linker and sealing tool
+- runtime/kernel assumptions profile id
 
-The canonical pipeline is:
+### 3.5 IPS Persistence Layer
 
-1. **Normalize IR**
-   Parse modules, canonicalize symbols, freeze target triples and data layouts.
+IPS is required for durable state claims:
+- typed layout id
+- epoch counter
+- checksum-protected frames
+- commit protocol with explicit flush points
+- recovery replay/rollback rules
+- invariant re-validation before exposure
 
-2. **Structural lint**
-   Verify declared calls/reads/writes/effects against actual IR use-def and call graph.
+Without IPS implementation, persistence claims are non-compliant.
 
-3. **Contract extraction**
-   Materialize SMT obligations from `pcf.pre/post`, control-flow, and memory model.
+## 4. Conformance Levels (Measurement, Not Roadmap)
 
-4. **Proof check / discharge**
-   Validate proof witness or discharge obligations with configured solver profile.
+- **L0 Structural**: Graph comments parse and pass consistency checks.
+- **L1 Contract Complete**: Required functions have full PCF metadata (`pre/post/effects/bind/proof`).
+- **L2 Verified**: Solver/checker-backed verification is fail-closed in build.
+- **L3 Linked and Sealed**: Link gate enforced and artifact manifest emitted with TCB capture.
+- **L4 Durable**: IPS recovery protocol implemented and validated under crash tests.
 
-5. **Link gate**
-   Link only modules whose exported PCFs pass verification and effect compatibility checks.
+A system may claim only the highest level whose criteria are fully met.
 
-6. **Artifact seal**
-   Emit binaries plus manifest containing digests for IR, proofs, toolchain, and benchmark snapshot.
+## 5. Scientific Evaluation Plan
 
-No step is advisory. Failure at any step blocks release artifacts.
+This architecture is tested with falsifiable hypotheses:
 
-### 4.2 Module Boundary Rules
+- **H1 Structural indexing reduces agent search cost.**
+  Metric: median files opened, prompt tokens consumed, and wall-clock latency for impact-analysis tasks.
 
-At every boundary (native module, wasm module, RPC boundary):
-- Caller must satisfy callee precondition.
-- Callee guarantees postcondition and declared effects only.
-- Boundary shims are generated from PCF metadata; they are not handwritten policy code.
+- **H2 Effect declarations catch real regressions.**
+  Metric: number of undeclared side effects caught pre-merge by effect lint.
 
-### 4.3 Runtime Contract Mode
+- **H3 Link gate prevents contract regressions.**
+  Metric: rejected edges due to pre/post/effect incompatibility vs escaped regressions.
 
-Runtime has two modes:
-- **Verified mode**: proof-checked contracts trusted; only boundary assertions remain.
-- **Audit mode**: selected contracts are rechecked at runtime for sampling and drift detection.
+- **H4 Artifact sealing improves reproducibility.**
+  Metric: successful deterministic rebuild rate from manifest-only replay.
 
-## 5. Persistence and Recovery Model
+- **H5 IPS recovery preserves invariants under fault injection.**
+  Metric: invariant-preserving recovery success rate across crash points.
 
-LastStack persistence uses typed binary objects with explicit durability protocol:
-- Copy-on-write or journaled mutation records.
-- Checksummed pages/segments.
-- Monotonic version stamps.
-- Crash recovery that replays or rolls back to last valid invariant-preserving state.
+All hypothesis tests require machine-readable outputs committed or archived by CI.
 
-Durability guarantees are part of IPS metadata and must be machine-checked in recovery tests.
+## 6. Current Status Against This Spec
 
-## 6. Trusted Computing Base (TCB)
+At baseline `fbf810c`:
+- **Meets**: L0 (structural graph comments + extractor), benchmark policy operations.
+- **Partially meets**: L1 (server partial PCF coverage only).
+- **Does not meet**: L2, L3, L4.
 
-The TCB is explicitly scoped to:
-- LLVM frontend/parser and codegen components used in the build profile.
-- PCF/IPS verifier implementation.
-- Proof checker and/or SMT solver binaries.
-- Linker and manifest sealer.
-- Kernel/runtime primitives used by produced binaries.
+This is an implementation maturity statement, not a philosophy change.
 
-Everything else is untrusted input. TCB versions and hashes are included in sealed manifests.
+## 7. Definition of Done
 
-## 7. Operational Policy
+A LastStack-compliant release must satisfy all of:
+- Canonical LLVM IR behavior modules.
+- Full PCF coverage on exported/critical interfaces.
+- Fail-closed verifier and link gate in the build path.
+- Artifact seal with explicit TCB records.
+- IPS-backed durable state for persistence claims.
+- CI benchmark evidence archived and reproducible.
 
-### 7.1 Reproducibility
-
-A release must be reproducible from:
-- Commit SHA.
-- Toolchain manifest.
-- Verification profile.
-- Benchmark workload definition.
-
-### 7.2 Benchmark Policy (Operational)
-
-Performance reporting rules:
-- Benchmarks run in CI using committed workload definitions.
-- Summary is committed in-repo (`docs/benchmark.md`).
-- Raw metric artifacts are preserved (`k6-summary`).
-- Claims in docs must match committed benchmark snapshots.
-
-## 8. Demo Mapping (What Is Proven in This Repository)
-
-This repository demonstrates practical viability of the architecture shape:
-- A native HTTP server authored in LLVM IR (`demo/server.ll`).
-- A WASM fractal module authored in LLVM IR (`demo/fractal.ll`).
-- A minimal webpage where JS only instantiates WASM and blits its buffer (`demo/public/index.html`).
-- Build, verification-report, and CI benchmark plumbing (`demo/build.sh`, `demo/verify.sh`, `.github/workflows/k6.yml`).
-
-What the demo currently proves:
-- LLVM IR can directly define both server and wasm workload.
-- Proof metadata can survive optimization and be surfaced in verification reports.
-- CI can continuously measure and persist benchmark snapshots.
-
-What remains to fully meet this architecture spec:
-- Solver-backed discharge of PCF obligations as a hard gate.
-- Formal effect-surface lint with build failure on mismatch.
-- First-class proof certificates with independent checker validation.
-- IPS crash-recovery proofs and recovery harness.
-
-## 9. Non-Goals
-
-LastStack does not optimize for:
-- Human-oriented syntax ergonomics as a primary concern.
-- Framework-level abstraction layers with implicit side effects.
-- Test-only correctness claims without contract/proof linkage.
-
-## 10. Definition of Done for LastStack Systems
-
-A system qualifies as LastStack-compliant when:
-- Executable behavior is authored and versioned as LLVM IR modules.
-- Exported behavior is expressed as complete PCFs.
-- Verification is mandatory at link time.
-- Effects are declared and mechanically validated.
-- Persistent state uses IPS with validated recovery.
-- Benchmark evidence is committed and reproducible.
-
-This is the architecture: one representation, one verification contract, one release gate.
+This reconciled architecture keeps what is already working (structural graph for agents) and formalizes what must still be enforced (verification, linking, sealing, and durability).

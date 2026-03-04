@@ -1,76 +1,132 @@
-# LastStack Whitepaper v1.0 Critique
+# Fresh Critique of `docs/white-paper.md` (v1.2)
 
-*Evaluated against white-paper.md (Version 1.0, March 2026) and the current demo state.*
+## Scope and Method
 
----
+This critique evaluates the current whitepaper (`docs/white-paper.md`, v1.2) against the current repository implementation on branch `feat-close-spec-gaps`.
 
-## Paper Strengths
+Evaluation criteria:
+- Architectural coherence: are claims internally consistent?
+- Scientific quality: are hypotheses and measurements falsifiable?
+- Operational fit: can the stated gates map to real build/CI behavior?
+- Evidence quality: are current-state claims traceable to code and scripts?
 
-- **Section 1.1 is the best part.** The rationale for using `.ll` text over a proprietary binary source or AST dumps is honest and well-grounded in current LLM behavior (sequential token streams, local-span reasoning, no native graph memory). This is a genuine architectural insight, not marketing.
-- **Removing the staged migration model is the right call.** The previous spec hedged with Stage 1/2/3 scaffolding. Stating the target directly forces honest accounting of what the demo does and does not prove.
-- **Section 8 (Demo Mapping) is creditably honest.** The four items listed under "What remains" are accurate and non-trivial. Naming them in the paper is good practice.
-- **PCF as the atomic unit (Section 3.1) is well-defined.** The six required metadata fields (pre, post, effects, bind, proof, verifier) provide a concrete interface shape. The LLVM metadata syntax example is actionable.
+## What v1.2 Gets Right
 
----
+### 1) It cleanly reconciles two real streams of work
 
-## Paper Gaps
+The paper correctly combines:
+- structural graph-comment infrastructure (`@fn/@calls/@reads` + extractor), and
+- formal proof-carrying gate aspirations (effects, bind, link gate, sealing, TCB).
 
-### Proof format is unspecified
-Section 3.1 requires a `pcf.proof` field containing a "checkable witness or certificate reference." The paper never specifies what this witness looks like, what format it uses (e.g., Lean proof term, Coq certificate, Boogie VCC output, Z3 model), or what the independent checker is. Without a concrete format, the requirement cannot be mechanically enforced — it can only be satisfied by convention.
+This avoids a false choice between “graph-first” and “formal-first.”
 
-### SMT obligation materialization is glossed over
-Section 4.1 step 3 states "Materialize SMT obligations from pcf.pre/post, control-flow, and memory model." For LLVM IR with pointer arithmetic, aliasing, and integer-wrapping semantics, this is a research-level problem. The paper treats it as a pipeline step without acknowledging the complexity or referencing a concrete tool (e.g., SeaHorn, KLEE, SMACK). This gap is load-bearing: if the obligation extraction is unsound, the proof discharge is meaningless.
+### 2) It shifts from ideology to measurable maturity
 
-### Effect surface enforcement is fully unspecified
-Section 3.3 says "Effect mismatch between declaration and body is a hard verification failure." Section 4.1 step 2 calls this "structural lint." Neither section specifies how indirect calls, function pointers, or inline assembly are handled in the call graph — the hardest cases. The paper needs either a scoping statement (e.g., "no function pointers in PCF-annotated code") or a concrete analysis strategy.
+The conformance ladder (`L0`..`L4`) is the strongest part of the document. It prevents inflated claims by requiring explicit capability thresholds.
 
-### IPS recovery proofs have no format or toolchain
-Section 3.2 and Section 5 require that crash recovery "validates checksum/version/invariants before exposure" and that durability guarantees are "machine-checked in recovery tests." No proof format, no checker tool, and no test harness shape is given. This is the least developed section of the paper.
+### 3) It uses evidence-first framing
 
-### Verified/Audit runtime mode boundary is unclear
-Section 4.3 defines two runtime modes but does not specify when a system transitions between them, who controls the mode flag, or what the audit sampling rate and drift threshold are. Without operational parameters, the distinction is nominal.
+Section 1 baseline statements align with repository reality and avoid pretending that verifier/link/sealing are complete on `master`.
 
----
+### 4) It introduces a scientific evaluation frame
 
-## Demo vs. Specification
+H1..H5 are falsifiable and force instrumentation discipline. This is materially better than narrative-only architecture docs.
 
-The paper's Section 10 (Definition of Done) defines six criteria for LastStack compliance. The demo satisfies none of them completely.
+## Core Critique
 
-### What the demo now gets right
-- `fractal.wasm` is built from `fractal.ll` via the toolchain pipeline and is present in `public/` — the prior missing-artifact issue is resolved.
-- PCF metadata is present on 5 of 7 functions in `server.ll` (`@build_response`, `@check_invariants`, `@load_assets`, `@handle_client`, `@main`).
-- LLVM metadata survives through `llvm-as` and is partially preserved through optimization (noted honestly in `build.sh`).
+### A) v1.2 still mixes “spec” and “program plan” in the same level of authority
 
-### Remaining gaps
+Problem:
+- Some sections are normative requirements (“must emit manifest,” “reject edge”),
+- others are roadmap-like measurements and hypotheses.
 
-**fractal.ll has zero PCF metadata.** All six functions (`@mandelbrot_iter`, `@generate_fractal`, `@get_buffer`, etc.) have no pre/post/proof annotations. The paper requires every *exported* behavior to be a PCF. The WASM module is the most visible artifact of the demo, and it carries no proofs.
+Impact:
+- Hard to determine what is required for compliance now versus what is research instrumentation.
 
-**Two server functions have no PCF.** `@read_file` and `@get_content_type` are called by annotated functions but carry no PCF metadata themselves. `@read_file` is the most dangerous omission: it takes an unchecked buffer size and callers assume 256 KB is always sufficient. There is no contract bounding this.
+Recommendation:
+- Split into two files or two explicit strata inside the paper:
+  1. **Normative Spec** (must-pass release gates)
+  2. **Research Program** (metrics/hypotheses, optional for compliance)
 
-**No `!pcf.effects` declarations exist anywhere.** The paper's Effect Surface requirement (Section 3.3) is unimplemented in both `server.ll` and `fractal.ll`. No syscall declarations, no global-write declarations, no I/O class declarations. Effect lint cannot be run because there is nothing to lint against.
+### B) The PCF schema is under-specified in this v1.2 revision
 
-**`verify.sh` is a metadata reader, not a verifier.** It greps IR for annotation presence and unconditionally prints `PASS (static check — SMT discharge requires Z3)`. It performs no solver invocation, no SSA-value binding check, and no call-graph reconciliation. A build that "passes" verification currently means only that annotations exist syntactically.
+v1.2 names required keys (`pcf.schema`, `pcf.pre`, etc.) but does not fully pin wire format and canonical serialization in this revision text.
 
-**The build pipeline has no link gate.** Section 4.1 step 5 requires that only modules whose PCFs pass verification and effect compatibility checks are linked. `build.sh` links unconditionally. A function with a broken postcondition or missing proof is indistinguishable from a correct one at link time.
+Impact:
+- Independent implementations may interpret payload shape differently.
+- Gate portability suffers.
 
-**No artifact seal.** The paper requires a manifest containing digests for IR, proofs, toolchain, and benchmark snapshot. No such manifest is generated or committed.
+Recommendation:
+- Reintroduce one normative schema appendix with:
+  - canonical encoding,
+  - required/optional fields,
+  - compatibility and versioning rules,
+  - verifier failure behavior on unknown/missing fields.
 
-**TCB is not scoped.** The paper requires TCB versions and hashes in sealed manifests (Section 6). The toolchain versions used in CI are not recorded in any committed artifact.
+### C) Link-gate semantics are conceptually correct but operationally incomplete
 
-**No IPS.** Persistent state uses the OS filesystem directly. No typed binary schema, no invariant validation on mutation, no crash recovery protocol.
+v1.2 defines edge checks, but does not define fallback policy under verifier uncertainty (timeouts, unknown SAT/SMT outcomes, solver divergence).
 
----
+Impact:
+- Different runners may produce different pass/fail outcomes for the same commit.
 
-## Verdict
+Recommendation:
+- Add a strict policy table:
+  - `valid` -> pass
+  - `invalid` -> fail
+  - `unknown/timeout` -> fail in release profile, warn in dev profile
 
-The whitepaper v1.0 is a well-scoped, honest target-state specification. Its decision to drop the staged migration model, define PCF as the atomic unit with concrete metadata fields, and scope the TCB explicitly represents a meaningful tightening over the prior draft.
+### D) Artifact seal section needs a normative manifest schema id
 
-The demo is proof-of-concept at the annotation layer only. It shows that LLVM IR can serve as a practical source representation and that PCF-shaped metadata can be attached to functions. It does not demonstrate proof discharge, effect enforcement, link gating, or the IPS persistence model. The paper's own Section 8 acknowledges this accurately.
+The paper requires a manifest, but does not lock the schema id and required fields as a checksum-stable contract in this revision.
 
-The most important near-term actions to close the gap:
+Impact:
+- “sealed artifact” can become implementation-defined.
 
-1. Add `!pcf.pre`, `!pcf.post`, `!pcf.effects`, `!pcf.proof` metadata to all exported functions in `fractal.ll`.
-2. Add `!pcf.effects` to all annotated functions in `server.ll`; implement an effect lint script that cross-checks declared effects against IR call graph and global accesses, and fail the build on mismatch.
-3. Specify the proof witness format (even a stub format) so `verify.sh` can distinguish a valid proof from an empty metadata node.
-4. Replace the hardcoded PASS in `verify.sh` with a real gate: fail if any PCF-annotated function is missing required metadata fields, and flag unannotated exported functions.
-5. Commit a toolchain digest file alongside each build to make the TCB claim actionable.
+Recommendation:
+- Define `laststack.artifact.v1` with required keys and hash algorithms.
+
+### E) IPS section is principled but still detached from immediate adoption path
+
+The paper correctly states IPS requirements, but no minimal first IPS scope is mandated (single object type, crash matrix, fsync model, etc.).
+
+Impact:
+- Teams can defer IPS indefinitely while still claiming architectural progress.
+
+Recommendation:
+- Add “minimum IPS compliance test” criteria (one durable object, deterministic crash-recovery harness, invariant proofs on replay).
+
+## Evidence Check Against Current Branch
+
+From current branch implementation:
+- `demo/webserver/build.sh` now includes verification gate, link-gate, and artifact sealing steps.
+- `demo/storage/build.sh` includes IPS runtime build and IPS evidence checks.
+- `demo/webserver/verify.sh` is fail-closed and emits machine-readable JSON.
+- `demo/webserver/fractal.ll` includes PCF metadata on exported functions in this branch state.
+- `demo/webserver/server.ll` includes broader PCF coverage and effect/bind metadata in this branch state.
+
+Interpretation:
+- Branch implementation is ahead of baseline `master` and better aligned with v1.2 goals.
+- Paper baseline remains historically correct for `master`, but a new section should explicitly track **branch-level** conformance when used for active R&D.
+
+## Scientific Rigor Assessment
+
+The scientific posture is substantially improved, but two additions are needed to make it robust:
+
+1. Define exact data collection protocol per hypothesis (sampling window, environment controls, confidence interval method).
+2. Require machine-readable experiment metadata (hardware profile, kernel/toolchain versions) for each reported metric.
+
+Without these, hypothesis outcomes are easy to bias through test environment drift.
+
+## Bottom Line
+
+`docs/white-paper.md` v1.2 is directionally strong and substantially more rigorous than earlier versions. The central improvement is the conformance-level model tied to measurable outcomes.
+
+The main remaining weakness is boundary clarity between normative release spec and research methodology. Fix that separation, pin schema-level contracts for PCF and artifact manifests, and add deterministic fallback policy for verifier uncertainty. Those steps would make the architecture both implementable and auditable across teams.
+
+## Immediate Next Edits Recommended
+
+1. Add a normative appendix for `laststack.pcf.v1` and `laststack.artifact.v1`.
+2. Add verifier/link-gate uncertainty policy (`valid/invalid/unknown`) by profile.
+3. Split compliance requirements from research hypotheses in document structure.
+4. Add a concrete “minimum IPS compliance test” subsection.

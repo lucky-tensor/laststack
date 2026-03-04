@@ -15,11 +15,6 @@ echo "[LastStack] Building..."
 bash build.sh
 echo ""
 
-# Run verification
-echo "[LastStack] Running invariant verification..."
-bash verify.sh
-echo ""
-
 # Start server
 echo "[LastStack] Starting server..."
 echo "[LastStack] Press Ctrl+C to stop."

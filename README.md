@@ -1,54 +1,73 @@
 # LastStack Demo
 
-LastStack is a staged, agent-first software architecture described in **docs/white-paper.md** (“The Last Stack: A Post-Human Software Development Architecture”, Mar 2026). It moves code from text toward **proof-carrying LLVM IR**: each function ships with pre/postconditions, invariants, and a proof witness. Near-term, text stays but gains structural metadata; long-term, LLVM IR plus proofs becomes the canonical form. The demo goal: a pure-LLVM HTTP server plus a WASM webpage, authored end-to-end by agents.
+LastStack is a staged, agent-first software architecture described in `docs/white-paper.md`. The demo goal: a pure LLVM server and webpage (wasm) written by agents.
 
-This repo is a runnable demo of that philosophy:
-- **Server** (`demo/server.ll`) — HTTP/1.1 server in LLVM IR with PCF-style metadata; serves static assets only.
-- **WASM workload** (`demo/fractal.ll` → `public/fractal.wasm`) — Mandelbrot generator compiled to wasm32.
-- **Client** (`demo/public/index.html`) — minimal HTML/JS: fetches the WASM, calls `generate_fractal`, and blits the returned pixel buffer directly to a `<canvas>`.
-- **Benchmarks** — exercised via conventional k6 scenarios in CI; results live in `docs/benchmark.md` (also published as artifact `k6-summary/benchmark.md`).
+This repository now has two separate demos:
+- `demo/webserver` - LLVM IR HTTP server + WASM fractal webpage.
+- `demo/storage` - LLVM IR IPS durability and recovery runtime.
 
 ![Fractal output](docs/fractal-demo.png)
 
-## Build & Run
-Requirements:
-- LLVM toolchain: `llc`, `wasm-ld` (preferred) or `clang` with wasm32 target. Any recent 14–18 should work.
-- `clang` (native) to link the server.
-- POSIX shell utilities. No Node/npm required.
+## Requirements
 
-Steps:
-1) **Build** (server + wasm):  
-   ```bash
-   cd demo
-   ./build.sh
-   ```
-   - Step 0 in `build.sh` always produces `public/fractal.wasm` (uses `llc+wasm-ld`, falls back to `clang --target=wasm32-unknown-unknown`).
-2) **Run server** on :9090:  
-   ```bash
-   cd demo
-   ./run.sh
-   ```
-   Then open http://localhost:9090/ — the page fetches `fractal.wasm` and renders continuously via `requestAnimationFrame`.
-3) **Verify invariants** (lightweight proof checks): `cd demo && ./verify.sh`
+- LLVM toolchain (`llc`, `wasm-ld` preferred; `clang` fallback for wasm build)
+- `clang` for native binaries
+- `rg` (ripgrep) for gate scripts
+- POSIX shell tools
+
+## Webserver Demo
+
+Build and run:
+
+```bash
+cd demo/webserver
+./build.sh
+./run.sh
+```
+
+Open `http://localhost:9090`.
+
+Spec:
+- `demo/webserver/spec.md`
+
+Key generated outputs:
+- `demo/webserver/public/fractal.wasm`
+- `demo/webserver/laststack-server`
+- `demo/webserver/verification-report.json`
+- `demo/webserver/link-gate-report.json`
+- `demo/webserver/artifacts/manifest.json`
+
+## Storage Demo
+
+Build and run:
+
+```bash
+cd demo/storage
+./build.sh
+./run.sh
+```
+
+Spec:
+- `demo/storage/spec.md`
+
+Key generated outputs:
+- `demo/storage/laststack-ips`
+- `demo/storage/ips-report.json`
 
 ## Benchmarks
-- Latest results: see `docs/benchmark.md` (kept in-repo; CI also publishes the same file as artifact `k6-summary/benchmark.md`). Canonical scenarios: single VU and 1000 VU, reporting RPS and p95 latency.
-- Run locally with any k6 script that hits `http://localhost:9090/`; for example:
-  ```bash
-  k6 run -e TARGET=http://localhost:9090 - <<'EOF'
-  import http from 'k6/http';
-  import { check } from 'k6';
-  export const options = { vus: 1, iterations: 200 };
-  export default () => {
-    const res = http.get(`${__ENV.TARGET || 'http://localhost:9090/'}`);
-    check(res, { 'status 200': r => r.status === 200 });
-  };
-  EOF
-  ```
+
+Latest recorded k6 benchmark snapshot (2026-03-04T18:37:58Z):
+
+| scenario | rps | p95_latency_s |
+|---|---:|---:|
+| single_vu | 3421.084244877707 | 0.15918009999999996 |
+| 1000_vus | 3815.592037200089 | 18.719029599999995 |
+
+CI still runs the same k6 scenarios against `demo/webserver`, and raw summaries are kept in the `k6-summary` workflow artifact.
 
 ## Files to Read First
-- `docs/white-paper.md` — motivation, staged roadmap (text → text+structure → IR+proofs).
-- `docs/demo-spec.md` — demo-specific architecture and constraints.
-- `docs/critique.md` — open issues and risks.
 
-The browser UI stays intentionally bare to spotlight the WASM output and the IR/proof story behind it. JS does nothing but fetch, instantiate, and blit the buffer returned by `generate_fractal`.
+- `docs/white-paper.md`
+- `demo/webserver/spec.md`
+- `demo/storage/spec.md`
+- `docs/critique.md`

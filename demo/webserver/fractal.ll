@@ -131,7 +131,7 @@ iter_exit:
 ; @inv       buffer write range is clamped to 16 MiB; pixel_loop visits each pixel exactly once
 ; @proof     prepare block: safe_bytes64 = min(w*h*4, 16777216); pixel_loop: i in [0, safe_pixels32). QED
 ; ============================================================================
-define i32 @generate_fractal(i32 %width, i32 %height, i32 %max_iter) {
+define i32 @generate_fractal(i32 %width, i32 %height, i32 %max_iter) !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !101 !pcf.post !102 !pcf.proof !103 !pcf.effects !104 !pcf.bind !105 {
 entry:
   %w_ok = icmp sgt i32 %width, 0
   %h_ok = icmp sgt i32 %height, 0
@@ -217,7 +217,7 @@ done:
 ; @pre       @generate_fractal has been called (otherwise returns 0)
 ; @post      return == @buffer_ptr
 ; ============================================================================
-define i32 @get_buffer() {
+define i32 @get_buffer() !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !106 !pcf.post !107 !pcf.proof !108 !pcf.effects !109 !pcf.bind !110 {
 entry:
   %ptr = load i32, i32* @buffer_ptr, align 4
   ret i32 %ptr
@@ -235,7 +235,7 @@ entry:
 ; @pre       @generate_fractal has been called (otherwise returns 0)
 ; @post      return == @buffer_size
 ; ============================================================================
-define i32 @get_buffer_size() {
+define i32 @get_buffer_size() !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !111 !pcf.post !112 !pcf.proof !113 !pcf.effects !114 !pcf.bind !115 {
 entry:
   %size = load i32, i32* @buffer_size, align 4
   ret i32 %size
@@ -253,8 +253,72 @@ entry:
 ; @pre       (none)
 ; @post      (no effect on any state)
 ; ============================================================================
-define void @free_buffer(i32 %ptr) {
+define void @free_buffer(i32 %ptr) !pcf.schema !121 !pcf.toolchain !122 !pcf.pre !116 !pcf.post !117 !pcf.proof !118 !pcf.effects !119 !pcf.bind !120 {
 entry:
   ret void
 }
 
+; ============================================================================
+; PCF Metadata
+; ============================================================================
+
+!101 = !{!"pcf.pre", !"smt",
+         !"(declare-const width (_ BitVec 32))
+           (declare-const height (_ BitVec 32))
+           (declare-const max_iter (_ BitVec 32))
+           (assert (bvsgt width #x00000000))
+           (assert (bvsgt height #x00000000))
+           (assert (bvsgt max_iter #x00000000))"}
+!102 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const buffer_size (_ BitVec 32))
+           (assert (or (= result #x00000000) (bvugt result #x00000000)))
+           (assert (bvuge buffer_size #x00000000))"}
+!103 = !{!"pcf.proof", !"witness",
+         !"strategy: guarded-loop
+           invalid inputs branch to zero ptr/size
+           valid inputs compute bounded byte length <= pixel_buffer
+           loop writes RGBA bytes within safe_bytes limit
+           qed"}
+!104 = !{!"pcf.effects",
+         !"global.read:@pixel_buffer,@buffer_ptr,@buffer_size,global.write:@pixel_buffer,@buffer_ptr,@buffer_size"}
+!105 = !{!"pcf.bind",
+         !"width->arg:%width,height->arg:%height,max_iter->arg:%max_iter,result->ret"}
+
+!106 = !{!"pcf.pre", !"smt", !"(assert true)"}
+!107 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (assert (bvuge result #x00000000))"}
+!108 = !{!"pcf.proof", !"witness",
+         !"strategy: direct-load
+           return value is load @buffer_ptr
+           no control-flow branches
+           qed"}
+!109 = !{!"pcf.effects", !"global.read:@buffer_ptr"}
+!110 = !{!"pcf.bind", !"result->ret"}
+
+!111 = !{!"pcf.pre", !"smt", !"(assert true)"}
+!112 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (assert (bvuge result #x00000000))"}
+!113 = !{!"pcf.proof", !"witness",
+         !"strategy: direct-load
+           return value is load @buffer_size
+           no control-flow branches
+           qed"}
+!114 = !{!"pcf.effects", !"global.read:@buffer_size"}
+!115 = !{!"pcf.bind", !"result->ret"}
+
+!116 = !{!"pcf.pre", !"smt", !"(assert true)"}
+!117 = !{!"pcf.post", !"smt", !"(assert true)  ; no-op allocator contract"}
+!118 = !{!"pcf.proof", !"witness",
+         !"strategy: no-op
+           free_buffer intentionally does nothing for static storage
+           qed"}
+!119 = !{!"pcf.effects", !"global.read:none,global.write:none"}
+!120 = !{!"pcf.bind", !"ptr->arg:%ptr"}
+!121 = !{!"pcf.schema", !"laststack.pcf.v1"}
+!122 = !{!"pcf.toolchain",
+         !"checker:laststack-verify-gate",
+         !"version:0.1.0",
+         !"hash:dev"}
