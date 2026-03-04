@@ -2,22 +2,44 @@
 ; LastStack Demo: Post-Human WebServer (optimized)
 ; ============================================================================
 ;
-; @module       server
-; @description  Minimal HTTP server written directly in LLVM IR.
-; @entry        @main
-; @build        demo/build.sh
-; @verify       demo/verify.sh
+; @module   server
+; @sum      Minimal HTTP/1.1 server: HTML and WASM served from prebuilt response buffers.
+; @target   x86_64-pc-linux-gnu
+; @entry    @main
+; @exports  @main
 ;
-; Navigation convention:
-;   @calls       — functions this function calls
-;   @called-by   — functions that call this function
-;   @reads       — globals this function reads
-;   @uses-type   — struct types this function uses
-;   @cfg         — control flow: block → [successor blocks]
-;   @invariant   — property that always holds
-;   @pre         — precondition (what must be true on entry)
-;   @post        — postcondition (what is true on exit)
-;   @proof       — proof strategy for correctness
+; IR Graph Comment Schema  (parsed by tools/extract-graph)
+; ─────────────────────────────────────────────────────────
+;   Node declarations  (start a new graph node context)
+;     @module / @fn / @global / @type  <id>
+;
+;   Attribute tags  (free-form string — node properties)
+;     @sum       one-line semantic summary
+;     @layer     entry | init | hot-path | util | diagnostic
+;     @pre       precondition on entry
+;     @post      postcondition on normal exit
+;     @inv       invariant that always holds
+;     @proof     proof strategy / argument
+;     @cfg       control-flow summary (block → successors)
+;     @mut       mutation pattern  (global only)
+;
+;   Edge tags  (comma-separated targets — become directed edges in the graph)
+;     @calls     fn → fn          direct call edges
+;     @called-by fn → fn          reverse call edges (for agent search)
+;     @reads     fn → global      global read edges
+;     @writes    fn → global      global write edges
+;     @read-by   global → fn      reverse read edges
+;     @written-by global → fn     reverse write edges
+;     @emits     fn → effect      effect emission edges
+;     @uses-type fn → type        struct usage edges
+;
+;   Effect vocabulary for @emits
+;     pure       no side effects
+;     sys:net    network syscalls  (socket, bind, listen, accept)
+;     sys:io     I/O syscalls      (read, write)
+;     sys:fs     filesystem calls  (open, close, stat)
+;     sys:proc   process calls     (fork, wait, sysconf)
+;     io:stdout  stdio             (printf)
 ;
 ; Performance optimizations (see docs/demo-spec.md):
 ;   1. Asset caching     — files read once at startup into global buffers;
@@ -86,21 +108,55 @@ target triple = "x86_64-pc-linux-gnu"
 ; Globals — runtime state (populated at startup by @load_assets)
 ; ============================================================================
 
-; Prebuilt complete HTTP responses: header + file body in one contiguous buffer.
-; @invariant  html_resp_len == strlen(header) + html file size  (set by load_assets)
-; @invariant  wasm_resp_len == strlen(header) + wasm file size  (set by load_assets)
+; @global  @html_resp
+; @sum     Prebuilt HTTP/1.1 200 response buffer for HTML: header + body in one contiguous allocation.
+; @mut     startup-only (written once by @load_assets before accept loop)
+; @written-by @load_assets
+; @read-by @handle_client
+; @inv     html_resp_len == header_len + html_file_size  (set by @load_assets)
 @html_resp     = global [266240 x i8] zeroinitializer, align 16
+
+; @global  @html_resp_len
+; @sum     Byte length of valid content in @html_resp.
+; @mut     startup-only
+; @written-by @load_assets
+; @read-by @handle_client
 @html_resp_len = global i64 0, align 8
+
+; @global  @wasm_resp
+; @sum     Prebuilt HTTP/1.1 200 response buffer for WASM: header + body in one contiguous allocation.
+; @mut     startup-only
+; @written-by @load_assets
+; @read-by @handle_client
+; @inv     wasm_resp_len == header_len + wasm_file_size  (set by @load_assets)
 @wasm_resp     = global [266240 x i8] zeroinitializer, align 16
+
+; @global  @wasm_resp_len
+; @sum     Byte length of valid content in @wasm_resp.
+; @mut     startup-only
+; @written-by @load_assets
+; @read-by @handle_client
 @wasm_resp_len = global i64 0, align 8
 
-; Precomputed 404 response length: strlen(@response_404) == 99
+; @global  @response_404_len
+; @sum     Precomputed byte length of @response_404 (99); avoids strlen on hot path.
+; @mut     constant (initialised to 99, never written at runtime)
+; @read-by @handle_client
+; @inv     value == strlen(@response_404) == 99
 @response_404_len = global i64 99, align 8
 
-; Single shared request-read buffer (safe: server is single-threaded)
+; @global  @req_buf
+; @sum     Single shared 1025-byte request-read buffer; safe because server is single-threaded.
+; @mut     per-request (written by @handle_client, null-terminated after each read)
+; @written-by @handle_client
+; @read-by @handle_client
 @req_buf = global [1025 x i8] zeroinitializer, align 16
 
-; Scratch buffer reused to load each asset at startup (then discarded)
+; @global  @file_load_buf
+; @sum     262 KiB scratch buffer used by @load_assets to stage file data before building responses.
+; @mut     startup-only (written twice: once for HTML, once for WASM; not read at runtime)
+; @written-by @load_assets
+; @read-by @load_assets
 @file_load_buf = global [262144 x i8] zeroinitializer, align 16
 
 ; Startup messages
@@ -130,13 +186,19 @@ declare i32 @fork()
 declare i32 @wait(i32*)
 
 ; ============================================================================
-; @function     @build_response
-; @called-by    (historical — no longer called; kept for documentation)
-; @cfg          entry (single block)
-; @pre          %buf is a valid pointer to >= 1024 bytes
-; @post         return > 0, %buf contains valid HTTP/1.1 response
-; @invariant    all source strings are compile-time constants
-; @proof        constant-propagation: total = sum(strlen(each constant)), QED
+; @fn        @build_response
+; @sum       Assemble an HTTP/1.1 200 response into a caller-supplied buffer; all sources are compile-time constants.
+; @layer     util
+; @called-by (unused — retained for documentation)
+; @calls     @strlen, @llvm.memcpy
+; @reads     @http_status, @http_content_type, @http_content_length, @http_crlf, @http_connection_close, @content_length_str, @html_body
+; @writes    (none — writes to argument buffer only)
+; @emits     pure
+; @cfg       entry (single block)
+; @pre       buf points to >= 1024 writable bytes
+; @post      return > 0; buf contains a valid HTTP/1.1 200 response
+; @inv       all source strings are compile-time constants; length sum is statically bounded
+; @proof     constant-propagation: total = sum(strlen(each constant)), QED
 ; ============================================================================
 
 define i64 @build_response(i8* %buf) !pcf.pre !1 !pcf.post !2 !pcf.proof !3 {
@@ -211,13 +273,18 @@ entry:
 }
 
 ; ============================================================================
-; @function     @read_file
-; @called-by    @load_assets
-; @calls        @open, @read, @close
-; @pre          %path is a valid C string; %buf points to %buf_size writable bytes
-; @post         returns bytes read (>= 0), or -1 on error
-; @invariant    fd is always closed on every exit path
-; @proof        case-analysis: read_open always closes fd; file_fail has no fd. QED
+; @fn        @read_file
+; @sum       Open a file, read up to buf_size bytes into buf, close fd; returns byte count or -1.
+; @layer     util
+; @called-by @load_assets
+; @calls     @open, @read, @close
+; @reads     (path arg — not a module global)
+; @writes    (buf arg — not a module global)
+; @emits     sys:fs, sys:io
+; @pre       path is a valid null-terminated C string; buf points to buf_size writable bytes
+; @post      return >= 0 bytes read on success; return -1 if open failed; fd closed on all paths
+; @inv       fd is closed on every exit path
+; @proof     case-analysis: read_open calls @close before ret; file_fail never opens fd. QED
 ; ============================================================================
 
 define i64 @read_file(i8* %path, i8* %buf, i64 %buf_size) {
@@ -236,11 +303,16 @@ file_fail:
 }
 
 ; ============================================================================
-; @function     @get_content_type
-; @called-by    (historical — @load_assets inlines the logic; kept for reference)
-; @calls        @strstr
-; @pre          %path is a valid C string
-; @post         returns pointer to a Content-Type header line (null-terminated)
+; @fn        @get_content_type
+; @sum       Return a Content-Type header string pointer based on path suffix (.wasm → wasm, else html).
+; @layer     util
+; @called-by (unused — @load_assets inlines this logic; retained for reference)
+; @calls     @strstr
+; @reads     @str_wasm, @content_type_wasm, @content_type_html
+; @writes    (none)
+; @emits     pure
+; @pre       path is a valid null-terminated C string
+; @post      return points to a valid null-terminated Content-Type header line (compile-time constant)
 ; ============================================================================
 
 define i8* @get_content_type(i8* %path) {
@@ -260,13 +332,18 @@ ret_html:
 }
 
 ; ============================================================================
-; @function     @check_invariants
-; @called-by    (removed from hot path — retained for offline/diagnostic use)
-; @calls        @printf
-; @pre          %response_buf != null, %response_len > 0
-; @post         logs invariant status; no side effects on data
-; @invariant    invariants_fail is unreachable given load_assets postcondition
-; @proof        runtime-assertion: checks are redundant given caller's proof, QED
+; @fn        @check_invariants
+; @sum       Assert response buffer validity and log result to stdout; diagnostic only, removed from hot path.
+; @layer     diagnostic
+; @called-by (removed from hot path — retained for offline/diagnostic use)
+; @calls     @printf
+; @reads     (args only — no module globals)
+; @writes    (none)
+; @emits     io:stdout
+; @pre       response_buf != null; response_len > 0
+; @post      logs invariant status to stdout; no mutation of response data
+; @inv       invariants_fail block is unreachable given @load_assets postcondition
+; @proof     runtime-assertion: checks are redundant given caller's proof. QED
 ; ============================================================================
 
 define void @check_invariants(i8* %response_buf, i64 %response_len) !pcf.pre !4 !pcf.post !5 !pcf.proof !6 {
@@ -286,19 +363,19 @@ invariants_fail:
 }
 
 ; ============================================================================
-; @function     @load_assets
-; @called-by    @main  (once, before accept loop)
-; @calls        @read_file, @snprintf, @llvm.memcpy.p0i8.p0i8.i64, @printf
-; @reads        @path_index, @path_wasm, @fmt_header_200,
-;               @content_type_html, @content_type_wasm
-; @writes       @html_resp, @html_resp_len, @wasm_resp, @wasm_resp_len
-; @cfg          entry → build_html_resp → load_wasm → build_wasm_resp → done
-;               entry → asset_fail
-;               load_wasm → asset_fail
-; @pre          (startup: no clients connected yet)
-; @post         @html_resp/@wasm_resp contain complete HTTP/1.1 responses iff return == 0
-; @invariant    @file_load_buf is reused sequentially for HTML then WASM
-; @proof        each read_file result is checked; return 0 only when both succeed. QED
+; @fn        @load_assets
+; @sum       Read HTML and WASM assets from disk and build prebuilt HTTP responses into globals; called once at startup.
+; @layer     init
+; @called-by @main
+; @calls     @read_file, @snprintf, @llvm.memcpy, @printf
+; @reads     @path_index, @path_wasm, @fmt_header_200, @content_type_html, @content_type_wasm, @file_load_buf
+; @writes    @html_resp, @html_resp_len, @wasm_resp, @wasm_resp_len, @file_load_buf
+; @emits     sys:fs, sys:io, io:stdout
+; @cfg       entry → build_html_resp → load_wasm → build_wasm_resp → done | entry → asset_fail | load_wasm → asset_fail
+; @pre       no clients connected; filesystem accessible; @html_resp and @wasm_resp are zeroed
+; @post      @html_resp and @wasm_resp contain complete HTTP/1.1 200 responses iff return == 0
+; @inv       @file_load_buf is reused sequentially (HTML load then WASM load); not read after startup
+; @proof     each @read_file result is checked against > 0; return 0 only when both assets load. QED
 ; ============================================================================
 
 define i32 @load_assets() !pcf.pre !13 !pcf.post !14 !pcf.proof !15 {
@@ -350,17 +427,19 @@ asset_fail:
 }
 
 ; ============================================================================
-; @function     @handle_client
-; @called-by    @main
-; @calls        @read, @strstr, @write, @close
-; @reads        @req_buf, @req_fractal, @html_resp, @html_resp_len,
-;               @wasm_resp, @wasm_resp_len, @response_404, @response_404_len
-; @cfg          entry → parse_request → serve_wasm | serve_html
-;               entry → serve_404
-; @pre          %client_fd >= 0 (valid open fd); @load_assets has been called
-; @post         complete HTTP response written to client; fd closed
-; @invariant    fd is closed on every exit path
-; @proof        case-analysis: serve_wasm/serve_html/serve_404 each close fd. QED
+; @fn        @handle_client
+; @sum       Read one HTTP request, route to a prebuilt response (HTML, WASM, or 404), write to fd, close.
+; @layer     hot-path
+; @called-by @main
+; @calls     @read, @write, @close, @strstr
+; @reads     @req_fractal, @html_resp, @html_resp_len, @wasm_resp, @wasm_resp_len, @response_404, @response_404_len
+; @writes    @req_buf
+; @emits     sys:io, sys:fs
+; @cfg       entry → parse_request → serve_wasm | serve_html | entry → serve_404
+; @pre       client_fd >= 0; @load_assets has returned 0
+; @post      one complete HTTP response written to client_fd; client_fd closed
+; @inv       client_fd is closed on every exit path (serve_wasm, serve_html, serve_404)
+; @proof     case-analysis: all three serve paths call @close before ret. QED
 ; ============================================================================
 
 define void @handle_client(i32 %client_fd) !pcf.pre !7 !pcf.post !8 !pcf.proof !9 {
@@ -404,21 +483,20 @@ serve_404:
 }
 
 ; ============================================================================
-; @function     @main
-; @called-by    (entry point)
-; @calls        @socket, @setsockopt, @htons, @bind, @listen, @load_assets,
-;               @accept, @handle_client, @printf, @close, @llvm.memset.p0i8.i64
-; @reads        @msg_start, @msg_error_socket, @msg_error_bind, @msg_error_listen
-; @uses-type    %struct.sockaddr_in
-; @cfg          entry → socket_fail | socket_ok
-;               socket_ok → bind_fail | bind_success
-;               bind_success → listen_fail | listen_success
-;               listen_success → load_fail | accept_loop
-;               accept_loop → client_accepted → accept_loop
-; @pre          (program entry)
-; @post         exit 0 (never reached — infinite loop) | exit 1 on setup failure
-; @invariant    sockfd is closed on every error path
-; @proof        case-analysis: 4 error exits return 1, success loops forever. QED
+; @fn        @main
+; @sum       Program entry: bind TCP/9090, load assets, fork CPU-count workers, accept loop forever.
+; @layer     entry
+; @called-by (program entry point)
+; @calls     @socket, @setsockopt, @htons, @bind, @listen, @load_assets, @sysconf, @fork, @wait, @accept, @handle_client, @printf, @close, @llvm.memset
+; @reads     @msg_start, @msg_error_socket, @msg_error_bind, @msg_error_listen
+; @writes    (none — stack locals only)
+; @emits     sys:net, sys:io, sys:proc, io:stdout
+; @uses-type %struct.sockaddr_in
+; @cfg       entry → socket_ok → bind_success → listen_success → start_workers → accept_loop → (forever) | → socket_fail | → bind_fail | → listen_fail | → load_fail
+; @pre       (program entry — no preconditions)
+; @post      return 1 on setup failure; never returns on success (infinite accept loop)
+; @inv       sockfd is closed on every error exit path
+; @proof     case-analysis: 4 error exits close sockfd and return 1; success path loops forever. QED
 ; ============================================================================
 
 define i32 @main() !pcf.pre !10 !pcf.post !11 !pcf.proof !12 {

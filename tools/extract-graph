@@ -1,0 +1,210 @@
+#!/usr/bin/env python3
+"""
+extract-graph  —  Parse LastStack IR graph comments and emit a JSON graph.
+
+Usage:
+    extract-graph <file.ll> [<file2.ll> ...]   # full JSON graph
+    extract-graph --summary <file.ll> ...       # compressed agent view
+
+Schema
+------
+Every annotated item in a .ll file has a structured comment block immediately
+preceding its IR declaration. The block declares a node and its edges.
+
+Node declaration lines (start a new node context):
+    ; @module  <id>
+    ; @fn      <id>
+    ; @global  <id>
+    ; @type    <id>
+
+Attribute tags (single value):
+    ; @sum       <one-line semantic summary>
+    ; @layer     <entry|init|hot-path|util|diagnostic>
+    ; @target    <target-triple>          (module only)
+    ; @entry     <fn-id>                  (module only)
+    ; @pre       <precondition>
+    ; @post      <postcondition>
+    ; @inv       <invariant>
+    ; @proof     <proof strategy>
+    ; @cfg       <control-flow summary>
+    ; @mut       <mutation pattern>       (global only)
+
+Edge tags (comma-separated target list — each value becomes a directed edge):
+    ; @calls      <fn>[, <fn> ...]        fn → fn   "calls"
+    ; @called-by  <fn>[, <fn> ...]        fn → fn   "called-by"
+    ; @reads      <global>[, ...]         fn → global "reads"
+    ; @writes     <global>[, ...]         fn → global "writes"
+    ; @read-by    <fn>[, ...]             global → fn "read-by"
+    ; @written-by <fn>[, ...]             global → fn "written-by"
+    ; @emits      <effect>[, ...]         fn → effect "emits"
+    ; @exports    <fn>[, ...]             module → fn "exports"
+    ; @uses-type  <type>[, ...]           fn → type   "uses-type"
+
+Effect vocabulary for @emits:
+    pure      — no side effects
+    sys:net   — network syscalls (socket/bind/listen/accept/connect)
+    sys:io    — I/O syscalls (read/write)
+    sys:fs    — filesystem syscalls (open/close/stat)
+    sys:proc  — process syscalls (fork/wait/sysconf/exit)
+    io:stdout — stdio (printf/fprintf)
+"""
+
+import re
+import json
+import sys
+from collections import defaultdict
+
+# ── Patterns ─────────────────────────────────────────────────────────────────
+
+NODE_DECL  = re.compile(r';\s+@(module|fn|global|type)\s+(\S+)')
+TAG_LINE   = re.compile(r';\s+@([\w][\w-]*)\s+(.*)')
+
+NODE_KINDS = {'module', 'fn', 'global', 'type'}
+
+# Tags whose values are comma-separated lists → one edge per item
+EDGE_TAGS = {
+    'calls',
+    'called-by',
+    'reads',
+    'writes',
+    'read-by',
+    'written-by',
+    'emits',
+    'exports',
+    'uses-type',
+}
+
+# Tags whose values are free-form strings → node attributes
+ATTR_TAGS = {'sum', 'layer', 'target', 'entry', 'pre', 'post', 'inv', 'proof', 'cfg', 'mut'}
+
+# ── Parser ────────────────────────────────────────────────────────────────────
+
+def parse_file(path):
+    """Return a list of raw node dicts parsed from one IR file."""
+    nodes = []
+    current = None
+
+    with open(path) as fh:
+        for raw_line in fh:
+            line = raw_line.rstrip()
+
+            # Node declaration — starts a new context
+            m = NODE_DECL.match(line)
+            if m:
+                if current:
+                    nodes.append(current)
+                kind, nid = m.groups()
+                current = {
+                    'id':     nid,
+                    'kind':   kind,
+                    'source': path,
+                    'attrs':  {},       # str → str
+                    'edges':  defaultdict(list),  # tag → [target, ...]
+                }
+                continue
+
+            if current is None:
+                continue
+
+            m = TAG_LINE.match(line)
+            if not m:
+                continue
+
+            tag, value = m.group(1), m.group(2).strip()
+
+            if tag in NODE_KINDS:
+                # Re-declaration inside a block — skip (shouldn't happen)
+                continue
+
+            if tag in EDGE_TAGS:
+                items = [v.strip() for v in value.split(',') if v.strip()]
+                current['edges'][tag].extend(items)
+            elif tag in ATTR_TAGS:
+                current['attrs'][tag] = value
+
+    if current:
+        nodes.append(current)
+
+    return nodes
+
+
+# ── Graph builder ─────────────────────────────────────────────────────────────
+
+def build_graph(all_nodes):
+    nodes_out = []
+    edges_out = []
+
+    for node in all_nodes:
+        n = {k: node[k] for k in ('id', 'kind', 'source')}
+        for attr in ATTR_TAGS:
+            if attr in node['attrs']:
+                n[attr] = node['attrs'][attr]
+        nodes_out.append(n)
+
+        src = node['id']
+        for edge_tag, targets in node['edges'].items():
+            for tgt in targets:
+                edges_out.append({'from': src, 'to': tgt, 'kind': edge_tag})
+
+    return {'nodes': nodes_out, 'edges': edges_out}
+
+
+# ── Summary view (compressed for agent context) ───────────────────────────────
+
+def build_summary(graph):
+    """
+    Compressed representation suitable for stuffing into an agent prompt.
+
+    Output:
+        A dict mapping node-id → {kind, summary, layer, pre, post, adj}
+        where adj = {edge-kind: [targets]} (only non-empty edge lists).
+    """
+    # Index edges by source
+    adj = defaultdict(lambda: defaultdict(list))
+    for e in graph['edges']:
+        adj[e['from']][e['kind']].append(e['to'])
+
+    summary = {}
+    for n in graph['nodes']:
+        nid = n['id']
+        entry = {'kind': n['kind']}
+        for field in ('sum', 'layer', 'pre', 'post', 'inv'):
+            if field in n:
+                entry[field] = n[field]
+        if nid in adj:
+            entry['adj'] = {k: v for k, v in adj[nid].items()}
+        summary[nid] = entry
+
+    return summary
+
+
+# ── CLI ───────────────────────────────────────────────────────────────────────
+
+def main():
+    args = sys.argv[1:]
+    mode = 'full'
+
+    if '--summary' in args:
+        mode = 'summary'
+        args = [a for a in args if a != '--summary']
+
+    if not args:
+        print(__doc__)
+        sys.exit(0)
+
+    all_nodes = []
+    for path in args:
+        all_nodes.extend(parse_file(path))
+
+    graph = build_graph(all_nodes)
+
+    if mode == 'summary':
+        out = build_summary(graph)
+    else:
+        out = graph
+
+    print(json.dumps(out, indent=2))
+
+
+if __name__ == '__main__':
+    main()

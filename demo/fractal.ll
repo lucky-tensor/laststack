@@ -2,26 +2,52 @@
 ; LastStack Demo: Fractal Generator (LLVM IR, no C source)
 ; ============================================================================
 ;
-; Exports expected by the client:
-;   - generate_fractal(width, height, max_iter) -> i32 pointer to RGBA buffer
-;   - get_buffer() -> i32 pointer to buffer
-;   - get_buffer_size() -> i32 bytes valid in buffer
-;   - free_buffer(ptr) -> void (no-op for static buffer)
+; @module   fractal
+; @sum      Mandelbrot fractal generator compiled to WASM32; exports a pixel-buffer API to JavaScript.
+; @target   wasm32-unknown-unknown
+; @entry    (library — no entry point)
+; @exports  @generate_fractal, @get_buffer, @get_buffer_size, @free_buffer
 ;
-; Internal helpers:
-;   - map(...) -> linear mapping utility
-;   - mandelbrot_iter(...) -> per-pixel iteration count
+; See tools/extract-graph for the IR graph comment schema.
 ;
 ; ============================================================================
 
 target triple = "wasm32-unknown-unknown"
 
+; @global  @pixel_buffer
+; @sum     Static 16 MiB RGBA pixel buffer (max 4096×1024 pixels); written per render, read by host.
+; @mut     per-render (written by @generate_fractal on each call)
+; @written-by @generate_fractal
+; @read-by @generate_fractal, @get_buffer
 @pixel_buffer = internal global [16777216 x i8] zeroinitializer, align 16
+
+; @global  @buffer_ptr
+; @sum     i32 WASM linear-memory offset of @pixel_buffer; updated by @generate_fractal.
+; @mut     per-render
+; @written-by @generate_fractal
+; @read-by @get_buffer
 @buffer_ptr = global i32 0, align 4
+
+; @global  @buffer_size
+; @sum     Byte count of valid pixel data written by the last @generate_fractal call.
+; @mut     per-render
+; @written-by @generate_fractal
+; @read-by @get_buffer_size
 @buffer_size = global i32 0, align 4
 
 ; ============================================================================
-; map(value, in_min, in_max, out_min, out_max)
+; @fn        @map
+; @sum       Linear interpolation: map value from [in_min, in_max] to [out_min, out_max]; guards zero-range.
+; @layer     util
+; @called-by @mandelbrot_iter
+; @calls     (none)
+; @reads     (none)
+; @writes    (none)
+; @emits     pure
+; @pre       in_min <= value <= in_max (caller responsibility)
+; @post      return in [out_min, out_max]
+; @inv       in_range == 0 guard prevents integer divide-by-zero
+; @proof     case-split: range_zero → out_min (trivially in range); calc → integer linear map. QED
 ; ============================================================================
 define i32 @map(i32 %value, i32 %in_min, i32 %in_max, i32 %out_min, i32 %out_max) {
 entry:
@@ -42,10 +68,18 @@ calc:
 }
 
 ; ============================================================================
-; mandelbrot_iter(x, y, width, height, max_iter)
-; Fixed-point domain:
-;   cx in [-2500, 1000]
-;   cy in [-1500, 1500]
+; @fn        @mandelbrot_iter
+; @sum       Fixed-point Mandelbrot iteration count for pixel (x,y); returns escape count in [0, max_iter].
+; @layer     hot-path
+; @called-by @generate_fractal
+; @calls     @map
+; @reads     (none)
+; @writes    (none)
+; @emits     pure
+; @pre       width > 0; height > 0; max_iter > 0; 0 <= x < width; 0 <= y < height
+; @post      return in [0, max_iter]
+; @inv       fixed-point domain: cx in [-2500, 1000], cy in [-1500, 1500]; magnitude threshold 4000 ≈ radius 2.0
+; @proof     loop variant: iter strictly increases each iteration; bounded above by max_iter. QED
 ; ============================================================================
 define i32 @mandelbrot_iter(i32 %x, i32 %y, i32 %width, i32 %height, i32 %max_iter) {
 entry:
@@ -84,8 +118,18 @@ iter_exit:
 }
 
 ; ============================================================================
-; generate_fractal(width, height, max_iter) -> ptr
-; Writes RGBA pixels into static @pixel_buffer and returns i32 pointer.
+; @fn        @generate_fractal
+; @sum       Fill @pixel_buffer with RGBA Mandelbrot image; update @buffer_ptr and @buffer_size; return i32 buffer pointer.
+; @layer     hot-path
+; @called-by (JS host via WASM export)
+; @calls     @mandelbrot_iter
+; @reads     @pixel_buffer
+; @writes    @pixel_buffer, @buffer_ptr, @buffer_size
+; @emits     pure
+; @pre       width > 0; height > 0; max_iter > 0
+; @post      @buffer_ptr == &@pixel_buffer; @buffer_size == min(width*height*4, 16777216); return == @buffer_ptr
+; @inv       buffer write range is clamped to 16 MiB; pixel_loop visits each pixel exactly once
+; @proof     prepare block: safe_bytes64 = min(w*h*4, 16777216); pixel_loop: i in [0, safe_pixels32). QED
 ; ============================================================================
 define i32 @generate_fractal(i32 %width, i32 %height, i32 %max_iter) {
 entry:
@@ -161,18 +205,54 @@ done:
   ret i32 %buf_i32
 }
 
+; ============================================================================
+; @fn        @get_buffer
+; @sum       Return current @buffer_ptr value (i32 WASM linear-memory offset of @pixel_buffer).
+; @layer     util
+; @called-by (JS host via WASM export)
+; @calls     (none)
+; @reads     @buffer_ptr
+; @writes    (none)
+; @emits     pure
+; @pre       @generate_fractal has been called (otherwise returns 0)
+; @post      return == @buffer_ptr
+; ============================================================================
 define i32 @get_buffer() {
 entry:
   %ptr = load i32, i32* @buffer_ptr, align 4
   ret i32 %ptr
 }
 
+; ============================================================================
+; @fn        @get_buffer_size
+; @sum       Return current @buffer_size value (byte count of valid pixel data in @pixel_buffer).
+; @layer     util
+; @called-by (JS host via WASM export)
+; @calls     (none)
+; @reads     @buffer_size
+; @writes    (none)
+; @emits     pure
+; @pre       @generate_fractal has been called (otherwise returns 0)
+; @post      return == @buffer_size
+; ============================================================================
 define i32 @get_buffer_size() {
 entry:
   %size = load i32, i32* @buffer_size, align 4
   ret i32 %size
 }
 
+; ============================================================================
+; @fn        @free_buffer
+; @sum       No-op stub; @pixel_buffer is statically allocated and never heap-managed.
+; @layer     util
+; @called-by (JS host via WASM export)
+; @calls     (none)
+; @reads     (none)
+; @writes    (none)
+; @emits     pure
+; @pre       (none)
+; @post      (no effect on any state)
+; ============================================================================
 define void @free_buffer(i32 %ptr) {
 entry:
   ret void
