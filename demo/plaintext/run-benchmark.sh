@@ -4,6 +4,9 @@
 # =============================================================================
 set -euo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$SCRIPT_DIR"
+
 if [ "$#" -lt 2 ]; then
   echo "Usage: $0 <label> [port] <command...>"
   exit 1
@@ -13,15 +16,19 @@ PLAINTEXT_PORT=18081
 LABEL="$1"
 shift
 
-if [[ "$1" =~ ^[0-9]+$ ]] && [ "$#" -gt 1 ]; then
+SERVER_PORT="$PLAINTEXT_PORT"
+if [ "$#" -gt 1 ] && [[ "$1" =~ ^[0-9]+$ ]]; then
   SERVER_PORT="$1"
   shift
-else
-  SERVER_PORT="$PLAINTEXT_PORT"
 fi
 
 CMD=("$@")
-LOG_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/artifacts"
+if [ "${#CMD[@]}" -eq 0 ]; then
+  echo "Usage: $0 <label> [port] <command...>"
+  exit 1
+fi
+
+LOG_DIR="$SCRIPT_DIR/artifacts"
 mkdir -p "$LOG_DIR"
 RESULT_FILE="$LOG_DIR/${LABEL}-wrk.csv"
 SERVER_LOG="$LOG_DIR/${LABEL}-server.log"
@@ -62,18 +69,18 @@ run_wrk() {
 }
 
 wait_for_server() {
-  if ! command -v curl >/dev/null 2>&1; then
-    echo "curl is required to validate that $TFB_URL is live" >&2
+  local attempt=0
+  local max_attempts=10
+  if ! command -v nc >/dev/null 2>&1; then
+    echo "nc not found; install netcat so benchmarks can wait for servers" >&2
     stop_server
     exit 1
   fi
 
-  local attempt=0
-  local max_attempts=10
-  until curl -sSf "$TFB_URL" >/dev/null 2>&1; do
+  until printf 'GET /plaintext HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n' | nc -w1 127.0.0.1 "$SERVER_PORT" >/dev/null 2>&1; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge "$max_attempts" ]; then
-      echo "timed out waiting for $TFB_URL to respond" >&2
+      echo "timed out waiting for http://127.0.0.1:${SERVER_PORT}/plaintext to respond" >&2
       stop_server
       exit 1
     fi
