@@ -6,7 +6,7 @@ This repo is a runnable demo of that philosophy:
 - **Server** (`demo/server.ll`) — HTTP/1.1 server in LLVM IR with PCF-style metadata; serves static assets only.
 - **WASM workload** (`demo/fractal.ll` → `public/fractal.wasm`) — Mandelbrot generator compiled to wasm32.
 - **Client** (`demo/public/index.html`) — minimal HTML/JS: fetches the WASM, calls `generate_fractal`, and blits the returned pixel buffer directly to a `<canvas>`.
-- **Benchmark** (`demo/bench.ll`) — sequential localhost HTTP benchmark.
+- **Benchmarks** — exercised via conventional k6 scenarios in CI (artifact: `k6-summary/benchmark.md`).
 
 ![Fractal output](docs/fractal-demo.png)
 
@@ -32,13 +32,8 @@ Steps:
 3) **Verify invariants** (lightweight proof checks): `cd demo && ./verify.sh`
 
 ## Benchmarks
-- Build the benchmark binary (same LLVM/clang toolchain): `./build.sh` also builds `laststack-bench` if present in the pipeline; otherwise compile `demo/bench.ll` similarly to `server.ll`.
-- Run against the local server:  
-  ```bash
-  ./laststack-bench [port 9090] [n_requests 1000]
-  ```
-  Reports succeeded/attempted, elapsed ms, RPS, and avg latency µs for sequential (no keep-alive) GET `/`.
-- CI publishes `benchmark.md` (artifact `k6-summary`) with single-VU and 1000-VU RPS/p95 latency for each run; treat those as canonical numbers.
+- CI runs k6 against the demo server; results are published as `benchmark.md` (artifact `k6-summary`) with single-VU and 1000-VU RPS/p95 latency. Treat these as the canonical numbers.
+- To reproduce locally, use a stock k6 HTTP script pointing at `http://localhost:9090/` with your chosen VU profile. No custom benchmark binary is included.
 
 ## Files to Read First
 - `WHITE_PAPER.md` — motivation, staged roadmap (text → text+structure → IR+proofs).

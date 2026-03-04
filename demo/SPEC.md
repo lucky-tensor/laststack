@@ -262,27 +262,6 @@ For each pixel (x, y) in the image:
 
 ---
 
-## Benchmark Tool
-
-**File:** `bench.ll`
-
-Sequential HTTP benchmark written in LLVM IR.
-
-**Usage:**
-```
-./laststack-bench [port [n_requests]]
-```
-
-**Output:** requests ok/total, elapsed ms, RPS, avg latency µs.
-
-**Internals:**
-- `@get_time_ns` — `clock_gettime(CLOCK_MONOTONIC)` → nanoseconds
-- `@make_request` — TCP connect → `write` GET / → `read` response → `close`; always closes fd
-- `@run_benchmark` — loop with loop-invariant proof in PCF metadata
-- `@main` — parses `argv[1]` (port) and `argv[2]` (n_requests)
-
----
-
 ## Server Performance Optimizations
 
 ### Implemented
