@@ -29,15 +29,20 @@ jobs:
         run: |
           bash build.sh
 
+      - name: Build Hyper baseline
+        working-directory: demo/plaintext/hyper
+        run: |
+          cargo build --release
+
       - name: Run LLVM plaintext workload
         working-directory: demo/plaintext
         run: |
           bash run-benchmark.sh llvmir 8080 ./laststack-plaintext
 
-      - name: Build Hyper baseline
-        working-directory: demo/plaintext/hyper
+      - name: Run Hyper baseline workload
+        working-directory: demo/plaintext
         run: |
-          cargo build --release
+          bash run-benchmark.sh hyper 8081 hyper/target/release/laststack_plaintext_hyper
 
       - name: Run Hyper baseline workload
         working-directory: demo/plaintext
