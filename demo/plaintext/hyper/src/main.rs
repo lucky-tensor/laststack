@@ -1,4 +1,4 @@
-use hyper::{service::{make_service_fn, service_fn}, Body, Request, Response, Server};
+use hyper::{server::conn::AddrIncoming, service::{make_service_fn, service_fn}, Body, Request, Response, Server};
 use std::convert::Infallible;
 use std::env;
 use std::net::{SocketAddr, TcpListener};
@@ -27,7 +27,9 @@ fn main() {
         .build()
         .unwrap();
     let listener = TcpListener::bind(addr).unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let incoming = AddrIncoming::from_listener(listener).unwrap();
     runtime
-        .block_on(Server::from_tcp(listener).unwrap().serve(make_service))
+        .block_on(Server::builder(incoming).serve(make_service))
         .unwrap();
 }
