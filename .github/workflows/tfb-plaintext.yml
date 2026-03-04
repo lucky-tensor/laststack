@@ -39,10 +39,26 @@ jobs:
         run: |
           bash run-benchmark.sh llvmir ./laststack-plaintext
 
+      - name: Dump LLVM artifacts
+        if: always()
+        working-directory: demo/plaintext
+        run: |
+          ls -al artifacts || true
+          cat artifacts/llvmir-server.log || true
+          tail -n 40 artifacts/benchmark-summary.md || true
+
       - name: Run Hyper baseline workload
         working-directory: demo/plaintext
         run: |
           bash run-benchmark.sh hyper 8081 hyper/target/release/laststack_plaintext_hyper
+
+      - name: Dump Hyper artifacts
+        if: always()
+        working-directory: demo/plaintext
+        run: |
+          ls -al artifacts || true
+          cat artifacts/hyper-server.log || true
+          tail -n 40 artifacts/benchmark-summary.md || true
 
       - name: Show benchmark summaries
         working-directory: demo/plaintext/artifacts

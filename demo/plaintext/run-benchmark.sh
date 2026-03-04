@@ -58,6 +58,23 @@ stop_server() {
   trap - EXIT
 }
 
+print_server_state() {
+  echo "==== server process info ===="
+  if ps -p "$SERVER_PID" >/dev/null 2>&1; then
+    ps -p "$SERVER_PID" -o pid,cmd
+  else
+    echo "server PID $SERVER_PID not running"
+  fi
+
+  if command -v lsof >/dev/null 2>&1; then
+    echo "Listening sockets for port $SERVER_PORT:"
+    lsof -aPi :"$SERVER_PORT"
+  else
+    echo "lsof not available, skipping socket info"
+  fi
+  echo "==== end server process info ===="
+}
+
 run_wrk() {
   local concurrency=$1
   local output_file="$LOG_DIR/${LABEL}-c${concurrency}.txt"
@@ -93,11 +110,15 @@ wait_for_server() {
     if [ "$attempt" -ge "$max_attempts" ]; then
       echo "timed out waiting for http://127.0.0.1:${SERVER_PORT}/plaintext to respond" >&2
       dump_server_log
+      print_server_state
       stop_server
       exit 1
     fi
     sleep 1
   done
+  echo "[benchmark] server responded; tailing latest log"
+  tail -n 20 "$SERVER_LOG"
+  print_server_state
 }
 
 init_summary() {
