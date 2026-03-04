@@ -1,6 +1,6 @@
 #!/bin/bash
 # ============================================================================
-# LastStack Demo: Artifact Sealing
+# LastStack Webserver Demo: Artifact Sealing
 # ============================================================================
 # Emits a manifest with content digests, verification outputs, and scoped
 # TCB tool records for reproducibility and audit.
@@ -14,7 +14,6 @@ cd "$SCRIPT_DIR"
 OUT_PATH="artifacts/manifest.json"
 VERIFY_REPORT="verification-report.json"
 LINK_REPORT="link-gate-report.json"
-IPS_REPORT="ips-report.json"
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -29,10 +28,6 @@ while [ $# -gt 0 ]; do
     --link-report)
       shift
       LINK_REPORT="${1:-$LINK_REPORT}"
-      ;;
-    --ips-report)
-      shift
-      IPS_REPORT="${1:-$IPS_REPORT}"
       ;;
     *)
       echo "[seal] unknown argument: $1" >&2
@@ -121,14 +116,11 @@ tools=("bash" "clang" "llvm-as" "opt" "llc" "wasm-ld" "z3" "cvc5" "jq")
   echo "  \"artifacts\": {"
   record_file_json "server_ll" "server.ll"; echo ","
   record_file_json "fractal_ll" "fractal.ll"; echo ","
-  record_file_json "ips_ll" "ips.ll"; echo ","
   record_file_json "index_html" "public/index.html"; echo ","
   record_file_json "fractal_wasm" "public/fractal.wasm"; echo ","
   record_file_json "server_bin" "laststack-server"; echo ","
-  record_file_json "ips_bin" "laststack-ips"; echo ","
   record_file_json "verify_report" "$VERIFY_REPORT"; echo ","
-  record_file_json "link_report" "$LINK_REPORT"; echo ","
-  record_file_json "ips_report" "$IPS_REPORT"; echo ""
+  record_file_json "link_report" "$LINK_REPORT"; echo ""
   echo "  },"
   echo "  \"tcb\": ["
 

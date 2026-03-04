@@ -15,14 +15,14 @@ The result is a single coherent specification grounded in measured repository st
 Baseline commit for this assessment: `fbf810c` (`master`, March 4, 2026).
 
 Observed facts:
-- `demo/server.ll` and `demo/fractal.ll` include structured graph comments (`@module`, `@fn`, `@calls`, `@reads`, etc.).
+- `demo/webserver/server.ll` and `demo/webserver/fractal.ll` include structured graph comments (`@module`, `@fn`, `@calls`, `@reads`, etc.).
 - `tools/extract-graph` parses those comments into JSON and summary views.
-- `demo/server.ll` contains PCF metadata on 5 of 7 functions.
-- `demo/fractal.ll` exports are currently unannotated as PCFs.
+- `demo/webserver/server.ll` contains PCF metadata on 5 of 7 functions.
+- `demo/webserver/fractal.ll` exports are currently unannotated as PCFs.
 - No `!pcf.effects` or `!pcf.bind` metadata exists in `master` demo IR.
-- `demo/verify.sh` is report-oriented and not a fail-closed proof gate.
+- `demo/webserver/verify.sh` is report-oriented and not a fail-closed proof gate.
 - Build/CI have no enforced link gate, artifact sealing manifest, or TCB capture.
-- CI benchmark reporting is operational (`docs/benchmark.md` + `k6-summary` artifacts).
+- CI benchmark reporting is operational via `k6-summary` artifacts.
 
 This baseline is the evidence foundation for the architecture below.
 
@@ -201,6 +201,6 @@ A LastStack-compliant release must satisfy all of:
 - Fail-closed verifier and link gate in the build path.
 - Artifact seal with explicit TCB records.
 - IPS-backed durable state for persistence claims.
-- CI benchmark evidence committed and reproducible.
+- CI benchmark evidence archived and reproducible.
 
 This reconciled architecture keeps what is already working (structural graph for agents) and formalizes what must still be enforced (verification, linking, sealing, and durability).

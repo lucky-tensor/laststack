@@ -10,7 +10,7 @@ jobs:
     if: github.actor != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
-      contents: write  # allow committing updated benchmark snapshot
+      contents: read
 
     steps:
       - name: Checkout
@@ -27,12 +27,12 @@ jobs:
           sudo apt-get install -y k6
 
       - name: Build demo server
-        working-directory: demo
+        working-directory: demo/webserver
         run: |
           bash build.sh
 
       - name: Run k6 scenarios (1-VU and 1000-VU)
-        working-directory: demo
+        working-directory: demo/webserver
         env:
           TARGET_URL: http://127.0.0.1:9090/
         run: |
@@ -88,7 +88,7 @@ jobs:
 
       - name: Print key metrics
         if: always()
-        working-directory: demo
+        working-directory: demo/webserver
         run: |
           summarize() {
             local file=$1
@@ -108,50 +108,11 @@ jobs:
           summarize k6-single.json "single"
           summarize k6-1000.json "1000vus"
 
-      - name: Write benchmark.md
-        if: always()
-        run: |
-          DATE=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-          SINGLE_RPS=$(jq '.metrics.http_reqs.rate' demo/k6-single.json)
-          SINGLE_P95=$(jq '.metrics.http_req_duration["p(95)"]' demo/k6-single.json)
-          CONC_RPS=$(jq '.metrics.http_reqs.rate' demo/k6-1000.json)
-          CONC_P95=$(jq '.metrics.http_req_duration["p(95)"]' demo/k6-1000.json)
-
-          [ -f docs/benchmark.md ] && cp docs/benchmark.md /tmp/benchmark_prev.md || true
-
-          {
-            echo "# Benchmarks"
-            echo "Run: $DATE"
-            echo ""
-            echo "| scenario | rps | p95_latency_s |"
-            echo "|---|---:|---:|"
-            echo "| single_vu | $SINGLE_RPS | $SINGLE_P95 |"
-            echo "| 1000_vus | $CONC_RPS | $CONC_P95 |"
-            echo ""
-          } > docs/benchmark.md
-
-      - name: Commit benchmark.md
-        if: github.ref == 'refs/heads/master'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -e
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          if git diff --quiet -- docs/benchmark.md; then
-            echo "No benchmark changes to commit."
-            exit 0
-          fi
-          git add docs/benchmark.md
-          git commit -m "chore: update benchmark snapshot [skip ci]"
-          git push origin HEAD:master
-
       - name: Upload k6 summary
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: k6-summary
           path: |
-            demo/k6-single.json
-            demo/k6-1000.json
-            docs/benchmark.md
+            demo/webserver/k6-single.json
+            demo/webserver/k6-1000.json
