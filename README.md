@@ -56,12 +56,12 @@ Key generated outputs:
 
 ## Benchmarks
 
-Latest recorded k6 benchmark snapshot (2026-03-04T18:37:58Z):
+Latest recorded k6 benchmark snapshot (from `k6-summary`, run `22686374237`, 2026-03-04T19:49:33Z):
 
 | scenario | rps | p95_latency_s |
 |---|---:|---:|
-| single_vu | 3421.084244877707 | 0.15918009999999996 |
-| 1000_vus | 3815.592037200089 | 18.719029599999995 |
+| single_vu | 3575.1656712592244 | 0.14615974999999995 |
+| 1000_vus | 12929.951548136494 | 17.632081399999997 |
 
 CI still runs the same k6 scenarios against `demo/webserver`, and raw summaries are kept in the `k6-summary` workflow artifact.
 
