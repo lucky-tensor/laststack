@@ -45,6 +45,7 @@ echo "label,concurrency,requests_per_sec,latency_avg" > "$RESULT_FILE"
 TFB_URL="http://127.0.0.1:${SERVER_PORT}/plaintext"
 
 start_server() {
+  echo "[benchmark] starting server: ${CMD[*]}"
   TFB_PORT="$SERVER_PORT" PORT="$SERVER_PORT" "${CMD[@]}" >"$SERVER_LOG" 2>&1 &
   SERVER_PID=$!
   trap 'kill $SERVER_PID 2>/dev/null || true' EXIT
@@ -68,6 +69,16 @@ run_wrk() {
   printf "%s,%s,%s,%s\n" "$LABEL" "$concurrency" "$rps" "$latency" >> "$RESULT_FILE"
 }
 
+dump_server_log() {
+  echo "==== server log ($SERVER_LOG) ===="
+  if [ -s "$SERVER_LOG" ]; then
+    cat "$SERVER_LOG"
+  else
+    echo "(log is empty or missing)"
+  fi
+  echo "==== end server log ===="
+}
+
 wait_for_server() {
   local attempt=0
   local max_attempts=10
@@ -81,6 +92,7 @@ wait_for_server() {
     attempt=$((attempt + 1))
     if [ "$attempt" -ge "$max_attempts" ]; then
       echo "timed out waiting for http://127.0.0.1:${SERVER_PORT}/plaintext to respond" >&2
+      dump_server_log
       stop_server
       exit 1
     fi
