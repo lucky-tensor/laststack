@@ -1,0 +1,1 @@
+{"rustc_fingerprint":9275218827032244534,"outputs":{"11533421992291367752":{"success":false,"status":"exit status: 2","code":2,"stdout":"","stderr":"sccache: error: Operation not permitted (os error 1)\n"}},"successes":{}}
