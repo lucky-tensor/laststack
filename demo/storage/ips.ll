@@ -7,6 +7,24 @@
 ;   add N    two-phase write (committed=0 then committed=1)
 ;   recover  load and validate committed checksum-protected state
 ;   corrupt  write uncommitted header (expected to fail recover)
+;
+; @module   ips
+; @layer    storage-runtime
+; @exports  main
+; @deps     libc (open, close, pread, pwrite, fsync, printf, strcmp, strtoll)
+;
+; Graph Annotation Legend:
+;   @fn        — function identifier
+;   @calls     — direct call edges (forward)
+;   @called-by — reverse call edges (for agent search)
+;   @reads     — global read edges
+;   @writes    — global write edges
+;   @emits     — effect atoms
+;   @pre       — entry precondition
+;   @post      — exit postcondition
+;   @inv       — structural invariant
+;   @proof     — proof strategy
+;
 ; ============================================================================
 ; ModuleID = 'ips.ll'
 source_filename = "ips.ll"
@@ -26,8 +44,20 @@ target triple = "x86_64-unknown-linux-gnu"
 @.str.8 = private unnamed_addr constant [42 x i8] c"ips:add delta=%lld epoch=%llu value=%lld\0A\00", align 1
 @.str.9 = private unnamed_addr constant [38 x i8] c"ips:corrupt wrote_uncommitted_header\0A\00", align 1
 
+; ============================================================================
+; @fn        @main
+; @sum       CLI dispatcher: parses argv and routes to cmd_init/cmd_show/cmd_add/cmd_corrupt.
+; @layer     entry
+; @calls     @cmd_init, @cmd_show, @cmd_add, @cmd_corrupt, @strcmp, @printf, @strtoll
+; @reads     @.str, @.str.1 .. @.str.5
+; @writes    (none)
+; @emits     libc.strcmp, libc.printf, libc.strtoll
+; @pre       argc >= 1, argv[0] is valid
+; @post      return in {0, 1}
+; @inv       dispatches exactly one sub-command per invocation
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define dso_local i32 @main(i32 noundef %0, i8** noundef %1) #0 {
+define dso_local i32 @main(i32 noundef %0, i8** noundef %1) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !102 !pcf.post !103 !pcf.proof !104 !pcf.effects !105 !pcf.bind !106 {
   %3 = alloca i32, align 4
   %4 = alloca i32, align 4
   %5 = alloca i8**, align 8
@@ -157,8 +187,24 @@ declare i32 @printf(i8* noundef, ...) #1
 
 declare i32 @strcmp(i8* noundef, i8* noundef) #1
 
+; ============================================================================
+; @fn        @cmd_init
+; @sum       Create/reset store file to epoch=0, value=0, committed=1, valid checksum.
+; @layer     command
+; @called-by @main
+; @calls     @open, @init_store_fd, @close, @printf
+; @reads     @.str.6
+; @writes    (none — writes to file via fd)
+; @emits     libc.open, libc.close, libc.printf
+; @pre       path is a valid null-terminated string
+; @post      on success (ret 0): file at path contains a valid IPS header
+;            with epoch=0, value=0, committed=1, checksum=checksum_for(header)
+; @inv       file is opened, written, and closed within a single invocation
+; @proof     strategy: init_store_fd writes deterministic header then fsyncs;
+;            checksum is computed before write, so on-disk state is self-consistent
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @cmd_init(i8* noundef %0) #0 {
+define internal i32 @cmd_init(i8* noundef %0) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !107 !pcf.post !108 !pcf.proof !109 !pcf.effects !110 !pcf.bind !111 {
   %2 = alloca i32, align 4
   %3 = alloca i8*, align 8
   %4 = alloca i32, align 4
@@ -199,8 +245,24 @@ define internal i32 @cmd_init(i8* noundef %0) #0 {
   ret i32 %22
 }
 
+; ============================================================================
+; @fn        @cmd_show
+; @sum       Read and display committed state. If file is empty/invalid, re-init.
+; @layer     command
+; @called-by @main
+; @calls     @open, @read_header, @init_store_fd, @close, @printf
+; @reads     @.str.7
+; @writes    (none)
+; @emits     libc.open, libc.close, libc.printf
+; @pre       path is a valid null-terminated string
+; @post      on success (ret 0): prints epoch, value, committed for a valid header
+; @inv       read_header validates magic, version, committed flag, and checksum
+;            before any field is exposed
+; @proof     strategy: read_header acts as validator gate; fields are only printed
+;            if all structural and checksum invariants hold
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @cmd_show(i8* noundef %0) #0 {
+define internal i32 @cmd_show(i8* noundef %0) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !112 !pcf.post !113 !pcf.proof !114 !pcf.effects !115 !pcf.bind !116 {
   %2 = alloca i32, align 4
   %3 = alloca i8*, align 8
   %4 = alloca i32, align 4
@@ -272,8 +334,33 @@ define internal i32 @cmd_show(i8* noundef %0) #0 {
 
 declare i64 @strtoll(i8* noundef, i8** noundef, i32 noundef) #1
 
+; ============================================================================
+; @fn        @cmd_add
+; @sum       Two-phase commit: read current state, write uncommitted new state
+;            (committed=0), then write committed state (committed=1).
+; @layer     command
+; @called-by @main
+; @calls     @open, @read_header, @init_store_fd, @write_header, @close, @printf,
+;            @llvm.memcpy.p0i8.p0i8.i64
+; @reads     @.str.8
+; @writes    (none — writes to file via fd)
+; @emits     libc.open, libc.close, libc.pwrite, libc.pread, libc.fsync, libc.printf
+; @pre       path is a valid null-terminated string; file exists with valid IPS state
+; @post      on success (ret 0):
+;            epoch_new == epoch_old + 1
+;            value_new == value_old + delta
+;            committed == 1
+;            checksum == checksum_for(final_header)
+;            exactly two writes occurred: first uncommitted, then committed
+; @inv       two-phase protocol: if crash occurs between writes, recover will
+;            reject the uncommitted state (committed=0 fails validation)
+; @proof     strategy: two-phase commit — first write sets committed=0 (crash-safe:
+;            recovery rejects committed!=1); second write sets committed=1 with
+;            valid checksum. Epoch monotonicity: new_epoch = old_epoch + 1 by
+;            construction (add i64 %old_epoch, 1).
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 {
+define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !117 !pcf.post !118 !pcf.proof !119 !pcf.effects !120 !pcf.bind !121 {
   %3 = alloca i32, align 4
   %4 = alloca i8*, align 8
   %5 = alloca i64, align 8
@@ -395,8 +482,26 @@ define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 {
   ret i32 %75
 }
 
+; ============================================================================
+; @fn        @cmd_corrupt
+; @sum       Write an intentionally invalid header (committed=0, bad checksum)
+;            for negative-path testing of the recovery gate.
+; @layer     command
+; @called-by @main
+; @calls     @open, @pwrite, @fsync, @close, @printf
+; @reads     @.str.9
+; @writes    (none — writes to file via fd)
+; @emits     libc.open, libc.pwrite, libc.fsync, libc.close, libc.printf
+; @pre       path is a valid null-terminated string
+; @post      on success (ret 0): file at path contains a header with committed=0
+;            and checksum=0 (intentionally invalid)
+; @inv       this function exists solely for testing; it deliberately violates
+;            IPS invariants to exercise the recovery gate's rejection logic
+; @proof     strategy: negative-path — writes header with committed=0 and
+;            checksum=0; recovery must reject this state
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @cmd_corrupt(i8* noundef %0) #0 {
+define internal i32 @cmd_corrupt(i8* noundef %0) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !122 !pcf.post !123 !pcf.proof !124 !pcf.effects !125 !pcf.bind !126 {
   %2 = alloca i32, align 4
   %3 = alloca i8*, align 8
   %4 = alloca i32, align 4
@@ -469,8 +574,28 @@ define internal i32 @cmd_corrupt(i8* noundef %0) #0 {
 
 declare i32 @open(i8* noundef, i32 noundef, ...) #1
 
+; ============================================================================
+; @fn        @init_store_fd
+; @sum       Initialize an IPS store on an open fd: writes header with magic=0x31535049,
+;            version=1, epoch=0, value=0, committed=1, and a valid checksum.
+; @layer     internal
+; @called-by @cmd_init, @cmd_show, @cmd_add
+; @calls     @write_header
+; @reads     (none)
+; @writes    (none — writes to file via fd)
+; @emits     libc.pwrite, libc.fsync
+; @pre       fd >= 0 (valid open file descriptor)
+; @post      on success (ret 0): file contains header with
+;            magic=0x31535049, version=1, epoch=0, value=0,
+;            committed=1, checksum=checksum_for({magic,ver,0,0,1})
+; @inv       all header fields are deterministic constants;
+;            checksum is computed by write_header before pwrite
+; @proof     strategy: all fields are compile-time constants except checksum;
+;            checksum_for is pure and deterministic; write_header computes
+;            checksum then writes atomically (single pwrite of 32 bytes)
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @init_store_fd(i32 noundef %0) #0 {
+define internal i32 @init_store_fd(i32 noundef %0) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !127 !pcf.post !128 !pcf.proof !129 !pcf.effects !130 !pcf.bind !131 {
   %2 = alloca i32, align 4
   %3 = alloca %struct.ips_header_t, align 8
   store i32 %0, i32* %2, align 4
@@ -493,8 +618,32 @@ define internal i32 @init_store_fd(i32 noundef %0) #0 {
 
 declare i32 @close(i32 noundef) #1
 
+; ============================================================================
+; @fn        @write_header
+; @sum       Compute checksum, store it in header.checksum, pwrite 32 bytes at
+;            offset 0, then fsync. Returns 0 on success, -1 on short write.
+; @layer     internal
+; @called-by @init_store_fd, @cmd_add
+; @calls     @checksum_for, @pwrite, @fsync
+; @reads     (none)
+; @writes    header->checksum (field 5)
+; @emits     libc.pwrite, libc.fsync
+; @pre       fd >= 0; header pointer is non-null and points to a valid
+;            ips_header_t with fields 0-4 populated
+; @post      on success (ret 0):
+;            header->checksum == checksum_for(header)
+;            exactly 32 bytes written to fd at offset 0
+;            fsync completed (data durable)
+;            on failure (ret -1): short write, no fsync guarantee
+; @inv       checksum is always computed from the current header state
+;            immediately before the write; no window where on-disk
+;            checksum can be stale relative to other fields
+; @proof     strategy: checksum_for is called, result stored in field 5,
+;            then pwrite emits all 32 bytes atomically. If pwrite returns
+;            != 32, function fails early without fsync.
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @write_header(i32 noundef %0, %struct.ips_header_t* noundef %1) #0 {
+define internal i32 @write_header(i32 noundef %0, %struct.ips_header_t* noundef %1) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !132 !pcf.post !133 !pcf.proof !134 !pcf.effects !135 !pcf.bind !136 {
   %3 = alloca i32, align 4
   %4 = alloca i32, align 4
   %5 = alloca %struct.ips_header_t*, align 8
@@ -530,8 +679,30 @@ define internal i32 @write_header(i32 noundef %0, %struct.ips_header_t* noundef 
   ret i32 %22
 }
 
+; ============================================================================
+; @fn        @checksum_for
+; @sum       Compute a 32-bit hash of the first 5 fields of an IPS header
+;            using XOR-fold + splitmix64 finalizer. Pure function.
+; @layer     internal
+; @called-by @write_header, @read_header
+; @calls     (none)
+; @reads     (none)
+; @writes    (none)
+; @emits     pure
+; @pre       header pointer is non-null, points to a valid ips_header_t
+; @post      return == splitmix64_finalize(
+;              magic XOR version XOR epoch XOR value XOR committed
+;              XOR 0x9E3779B97F4A7C15) truncated to 32 bits
+;            deterministic: same input always produces same output
+; @inv       pure function — no side effects, no memory writes,
+;            no I/O, no global state access
+; @proof     strategy: algebraic — the function is a fixed sequence of
+;            load, xor, mul, shift operations with no branches (except
+;            implicit in the finalizer). Output depends solely on the
+;            5 input fields. Determinism follows from absence of state.
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @checksum_for(%struct.ips_header_t* noundef %0) #0 {
+define internal i32 @checksum_for(%struct.ips_header_t* noundef %0) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !137 !pcf.post !138 !pcf.proof !139 !pcf.effects !140 !pcf.bind !141 {
   %2 = alloca %struct.ips_header_t*, align 8
   %3 = alloca i64, align 8
   store %struct.ips_header_t* %0, %struct.ips_header_t** %2, align 8
@@ -582,8 +753,32 @@ declare i64 @pwrite(i32 noundef, i8* noundef, i64 noundef, i64 noundef) #1
 
 declare i32 @fsync(i32 noundef) #1
 
+; ============================================================================
+; @fn        @read_header
+; @sum       Read 32 bytes from fd at offset 0 into an ips_header_t, then validate:
+;            magic, version, committed flag, and checksum.
+; @layer     internal
+; @called-by @cmd_show, @cmd_add
+; @calls     @pread, @checksum_for
+; @reads     (none)
+; @writes    (none — writes to caller-provided header pointer)
+; @emits     libc.pread
+; @pre       fd >= 0; header pointer is non-null and writable
+; @post      returns 0  (valid):   magic == 0x31535049 AND version == 1
+;                                  AND committed == 1
+;                                  AND checksum == checksum_for(header)
+;            returns 1  (empty):   pread returned 0 bytes (empty file)
+;            returns -1 (invalid): any validation check failed
+; @inv       no field of the header is exposed to callers unless all four
+;            validation checks pass (magic, version, committed, checksum)
+; @proof     strategy: four-gate validation — each check is a branch that
+;            jumps to the rejection label on failure. Only the path where
+;            all four checks pass reaches ret 0. Checksum is recomputed
+;            from the on-disk data via checksum_for and compared to the
+;            stored checksum field.
+; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
-define internal i32 @read_header(i32 noundef %0, %struct.ips_header_t* noundef %1) #0 {
+define internal i32 @read_header(i32 noundef %0, %struct.ips_header_t* noundef %1) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !142 !pcf.post !143 !pcf.proof !144 !pcf.effects !145 !pcf.bind !146 {
   %3 = alloca i32, align 4
   %4 = alloca i32, align 4
   %5 = alloca %struct.ips_header_t*, align 8
@@ -680,3 +875,210 @@ attributes #2 = { argmemonly nofree nounwind willreturn }
 !3 = !{i32 7, !"uwtable", i32 2}
 !4 = !{i32 7, !"frame-pointer", i32 2}
 !5 = !{!"Apple clang version 14.0.3 (clang-1403.0.22.14.1)"}
+
+; ============================================================================
+; PCF Metadata Definitions
+; ============================================================================
+
+!100 = !{!"pcf.schema", !"laststack.pcf.v1"}
+!101 = !{!"pcf.toolchain",
+         !"checker:laststack-verify-gate",
+         !"version:0.1.0",
+         !"hash:dev"}
+
+; --- @main ---
+!102 = !{!"pcf.pre", !"smt",
+         !"(declare-const argc (_ BitVec 32))
+           (assert (bvsge argc #x00000001))"}
+!103 = !{!"pcf.post", !"smt",
+         !"(declare-const exit_code (_ BitVec 32))
+           (assert (or (= exit_code #x00000000) (= exit_code #x00000001)))"}
+!104 = !{!"pcf.proof", !"witness",
+         !"strategy: dispatch-only
+           main parses argv and dispatches to exactly one cmd_* function;
+           each cmd_* returns 0 or 1; main propagates the return value"}
+!105 = !{!"pcf.effects", !"libc.strcmp,libc.printf,libc.strtoll"}
+!106 = !{!"pcf.bind", !"argc->arg:%0,argv->arg:%1,ret->exit_code"}
+
+; --- @cmd_init ---
+!107 = !{!"pcf.pre", !"smt",
+         !"(declare-const path (_ BitVec 64))
+           (assert (not (= path #x0000000000000000)))"}
+!108 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const epoch (_ BitVec 64))
+           (declare-const value (_ BitVec 64))
+           (declare-const committed (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (and (= epoch #x0000000000000000)
+                            (= value #x0000000000000000)
+                            (= committed #x00000001))))"}
+!109 = !{!"pcf.proof", !"witness",
+         !"strategy: init_store_fd writes deterministic header {magic,ver=1,epoch=0,value=0,committed=1}
+           with checksum computed by checksum_for before pwrite+fsync"}
+!110 = !{!"pcf.effects", !"libc.open,libc.close,libc.pwrite,libc.fsync,libc.printf"}
+!111 = !{!"pcf.bind", !"path->arg:%0,ret->result"}
+
+; --- @cmd_show ---
+!112 = !{!"pcf.pre", !"smt",
+         !"(declare-const path (_ BitVec 64))
+           (assert (not (= path #x0000000000000000)))"}
+!113 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (assert (or (= result #x00000000) (= result #x00000001)))"}
+!114 = !{!"pcf.proof", !"witness",
+         !"strategy: read_header validates magic+version+committed+checksum;
+           fields are only printed if all four gates pass"}
+!115 = !{!"pcf.effects", !"libc.open,libc.close,libc.pread,libc.printf"}
+!116 = !{!"pcf.bind", !"path->arg:%0,ret->result"}
+
+; --- @cmd_add ---
+!117 = !{!"pcf.pre", !"smt",
+         !"(declare-const path (_ BitVec 64))
+           (assert (not (= path #x0000000000000000)))"}
+!118 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const epoch_old (_ BitVec 64))
+           (declare-const epoch_new (_ BitVec 64))
+           (declare-const value_old (_ BitVec 64))
+           (declare-const value_new (_ BitVec 64))
+           (declare-const delta (_ BitVec 64))
+           (declare-const committed (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (and (= epoch_new (bvadd epoch_old #x0000000000000001))
+                            (= value_new (bvadd value_old delta))
+                            (= committed #x00000001))))"}
+!119 = !{!"pcf.proof", !"witness",
+         !"strategy: two-phase commit
+           Phase 1: write header with committed=0, new epoch and value
+           Phase 2: write header with committed=1, same epoch and value
+           If crash between phases, recovery rejects committed!=1.
+           Epoch monotonicity: epoch_new = epoch_old + 1 by add i64 instruction.
+           Value correctness: value_new = value_old + delta by add nsw i64."}
+!120 = !{!"pcf.effects", !"libc.open,libc.close,libc.pread,libc.pwrite,libc.fsync,libc.printf"}
+!121 = !{!"pcf.bind", !"path->arg:%0,delta->arg:%1,ret->result"}
+
+; --- @cmd_corrupt ---
+!122 = !{!"pcf.pre", !"smt",
+         !"(declare-const path (_ BitVec 64))
+           (assert (not (= path #x0000000000000000)))"}
+!123 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const committed (_ BitVec 32))
+           (declare-const checksum (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (and (= committed #x00000000)
+                            (= checksum #x00000000))))"}
+!124 = !{!"pcf.proof", !"witness",
+         !"strategy: negative-path testing
+           writes header with committed=0 and checksum=0;
+           read_header will reject: committed!=1 OR checksum mismatch"}
+!125 = !{!"pcf.effects", !"libc.open,libc.pwrite,libc.fsync,libc.close,libc.printf"}
+!126 = !{!"pcf.bind", !"path->arg:%0,ret->result"}
+
+; --- @init_store_fd ---
+!127 = !{!"pcf.pre", !"smt",
+         !"(declare-const fd (_ BitVec 32))
+           (assert (bvsge fd #x00000000))"}
+!128 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const epoch (_ BitVec 64))
+           (declare-const value (_ BitVec 64))
+           (declare-const committed (_ BitVec 32))
+           (declare-const magic (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (and (= magic #x31535049)
+                            (= epoch #x0000000000000000)
+                            (= value #x0000000000000000)
+                            (= committed #x00000001))))"}
+!129 = !{!"pcf.proof", !"witness",
+         !"strategy: deterministic constants
+           all header fields are compile-time constants; checksum is computed
+           by write_header via checksum_for before pwrite; fsync ensures
+           durability"}
+!130 = !{!"pcf.effects", !"libc.pwrite,libc.fsync"}
+!131 = !{!"pcf.bind", !"fd->arg:%0,ret->result"}
+
+; --- @write_header ---
+!132 = !{!"pcf.pre", !"smt",
+         !"(declare-const fd (_ BitVec 32))
+           (declare-const header_ptr (_ BitVec 64))
+           (assert (and (bvsge fd #x00000000)
+                        (not (= header_ptr #x0000000000000000))))"}
+!133 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const stored_checksum (_ BitVec 32))
+           (declare-const computed_checksum (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (= stored_checksum computed_checksum)))"}
+!134 = !{!"pcf.proof", !"witness",
+         !"strategy: checksum-before-write
+           1. checksum_for(header) called, result stored in header->checksum
+           2. pwrite emits all 32 bytes at offset 0
+           3. if pwrite returns != 32, fail early (ret -1), no fsync
+           4. if pwrite succeeds, fsync ensures durability
+           On-disk checksum is never stale: it is computed immediately before write"}
+!135 = !{!"pcf.effects", !"libc.pwrite,libc.fsync"}
+!136 = !{!"pcf.bind", !"fd->arg:%0,header->arg:%1,ret->result"}
+
+; --- @checksum_for ---
+!137 = !{!"pcf.pre", !"smt",
+         !"(declare-const header_ptr (_ BitVec 64))
+           (assert (not (= header_ptr #x0000000000000000)))"}
+!138 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const magic (_ BitVec 32))
+           (declare-const version (_ BitVec 32))
+           (declare-const epoch (_ BitVec 64))
+           (declare-const value (_ BitVec 64))
+           (declare-const committed (_ BitVec 32))
+           (assert (= result
+             ((_ extract 31 0)
+               (let ((h0 (bvxor (bvxor (bvxor (bvxor ((_ zero_extend 32) magic)
+                                                      ((_ zero_extend 32) version))
+                                               epoch)
+                                       value)
+                               ((_ zero_extend 32) committed))))
+               (let ((h1 (bvxor h0 #x9E3779B97F4A7C15)))
+               (let ((h2 (bvxor h1 (bvlshr h1 (_ bv33 64)))))
+               (let ((h3 (bvmul h2 #xFF51AFD7ED558CCD)))
+               (bvxor h3 (bvlshr h3 (_ bv33 64))))))))))"}
+; PCF proof: discharged via Z3 in checksum-z3.smt2 (unsat confirms IR == spec)
+!139 = !{!"pcf.proof", !"lspc.v1",
+         !"method: z3-bv",
+         !"smt_file: demo/storage/checksum-z3.smt2",
+         !"expected: unsat",
+         !"scope: QF_BV — all 160-bit input vectors",
+         !"claim: implementation (IR bitvector ops) equals postcondition specification"}
+!140 = !{!"pcf.effects", !"pure"}
+!141 = !{!"pcf.bind", !"header->arg:%0,ret->result"}
+
+; --- @read_header ---
+!142 = !{!"pcf.pre", !"smt",
+         !"(declare-const fd (_ BitVec 32))
+           (declare-const header_ptr (_ BitVec 64))
+           (assert (and (bvsge fd #x00000000)
+                        (not (= header_ptr #x0000000000000000))))"}
+!143 = !{!"pcf.post", !"smt",
+         !"(declare-const result (_ BitVec 32))
+           (declare-const magic (_ BitVec 32))
+           (declare-const version (_ BitVec 32))
+           (declare-const committed (_ BitVec 32))
+           (declare-const stored_checksum (_ BitVec 32))
+           (declare-const computed_checksum (_ BitVec 32))
+           (assert (=> (= result #x00000000)
+                       (and (= magic #x31535049)
+                            (= version #x00000001)
+                            (= committed #x00000001)
+                            (= stored_checksum computed_checksum))))"}
+!144 = !{!"pcf.proof", !"witness",
+         !"strategy: four-gate validation
+           Gate 1: pread returns exactly 32 bytes (rejects empty/short files)
+           Gate 2: magic == 0x31535049 (rejects non-IPS files)
+           Gate 3: version == 1 (rejects incompatible versions)
+           Gate 4: committed == 1 (rejects uncommitted two-phase state)
+           Gate 5: checksum_for(header) == header->checksum (rejects corruption)
+           Only the path where all five gates pass reaches ret 0."}
+!145 = !{!"pcf.effects", !"libc.pread"}
+!146 = !{!"pcf.bind", !"fd->arg:%0,header->arg:%1,ret->result"}
+

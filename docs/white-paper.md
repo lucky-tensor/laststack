@@ -10,7 +10,7 @@ Software development has been shaped by human cognitive constraints for seven de
 
 But reexamination does not mean wholesale replacement. Current agent coders — large language models — are themselves text-native. They read text, reason in text, and emit text. Asking them to abandon text for raw IR is like asking a carpenter to work without hands. The transition must be incremental, and every stage must be independently useful.
 
-**LastStack** defines an end-state architecture for software built primarily by coding agents: executable behavior authored in LLVM IR, machine-checkable contracts attached to every exported function, structural graph annotations navigable with grep, and release artifacts gated by formal verification. Text remains the agent-facing interface. Proofs replace tests as the primary correctness mechanism. The build succeeds only when contracts are discharged, effects are declared, and artifacts are reproducible.
+**LastStack** defines an end-state architecture for software built primarily by coding agents: executable behavior authored in LLVM IR, machine-checkable contracts attached to every exported function, structural graph annotations navigable with grep, and release artifacts gated by formal verification. Text remains the agent-facing interface. Formal contracts create higher assurances for software that is built and run without human intervention — not by replacing tests, but by raising the floor of correctness that tests validate against. The build succeeds only when contracts are discharged, effects are declared, and artifacts are reproducible.
 
 This paper specifies the architecture, the rationale behind it, and a concrete path from today's text-only codebases to the fully verified target.
 
@@ -30,7 +30,9 @@ Modern software stacks impose five categories of overhead that exist solely to a
 
 4. **Testing as simulation.** Humans write tests because they cannot formally verify their code. Tests check a finite number of execution paths. Formal verification checks all of them. An agent coder that can generate and check proofs has no need for example-based testing as the primary correctness mechanism.
 
-5. **Library indirection.** Human developers use libraries to avoid re-implementing solved problems. But libraries introduce dependency graphs, version conflicts, API surface area, and trust boundaries. An agent coder can inline verified implementations directly, eliminating the library abstraction entirely.
+5. **Library indirection.** Human developers use libraries to avoid re-implementing solved problems. But libraries introduce dependency graphs, version conflicts, API surface area, and trust boundaries. In the human-centric model, libraries are essential because no individual can maintain everything — shared maintenance, security patching, and ecosystem coordination require social infrastructure.
+
+   Agent coders change this calculus fundamentally. An agent that is both engineer and compiler can re-derive a patched implementation from a specification faster than it can track upstream changelogs. When the agent can verify the inlined result against a formal contract, the trust boundary that justified the library abstraction dissolves. Libraries remain useful for hardware-specific optimizations and externally mandated interfaces (e.g., TLS compliance), but the default posture shifts from "import a dependency" to "generate a verified implementation."
 
 ### 1.2 The Agent Text Problem
 
@@ -335,8 +337,8 @@ TCB scope: LLVM toolchain components, verifier/checker binaries, linker/sealing 
 ┌─────────────────────────────────────────────────────────────────────┐
 │                        AGENT LAYER                                  │
 │  ┌──────────────┐  ┌──────────────┐  ┌───────────────────────────┐ │
-│  │ IR Generator  │  │ IR Optimizer │  │ Self-Modification Engine  │ │
-│  │ (spec → IR)   │  │ (pass mgr)   │  │ (mutation + re-verify)    │ │
+│  │ IR Generator  │  │ IR Optimizer │  │ Re-optimization Engine    │ │
+│  │ (spec → IR)   │  │ (pass mgr)   │  │ (improve + re-verify)     │ │
 │  └──────┬───────┘  └──────┬───────┘  └────────────┬──────────────┘ │
 ├─────────┼─────────────────┼────────────────────────┼────────────────┤
 │         ▼                 ▼                        ▼                │
@@ -453,13 +455,13 @@ All hypothesis tests require machine-readable outputs committed or archived by C
 
 1. **Immediate structural navigation.** Agents grep `@calls`, `@reads`, `@inv` tags to traverse the code graph without reading every file. Zero tooling required — the graph is in the comments they were going to read anyway.
 
-2. **Formal correctness by construction.** Every function proves its specification. Linking is proof-checked. The concept of a "bug" shifts from "code doesn't match intent" to "specification doesn't match intent" — a strictly smaller problem surface.
+2. **Higher assurance through formal contracts.** Every exported function carries a machine-checkable specification. Linking is proof-checked. Formal verification raises the *floor* of correctness — it does not eliminate the need for testing. Unit tests and end-to-end tests should be authored in LLVM IR just as the production code is, and they validate that specifications match operational intent. The combination of proofs ("the code satisfies this contract") and tests ("this contract captures what we actually want") is strictly stronger than either alone.
 
 3. **Zero-cost persistence.** Data structures in memory are identical to data structures on disk. No serialization, no ORM, no schema migration.
 
-4. **Self-improvement.** Agents can observe their own execution, identify hot paths, and optimize them — modifying IR, re-verifying, and hot-swapping — without human intervention.
+4. **Iterative re-optimization.** The agent acts as a non-deterministic JIT compiler: given the same specification, each run can produce improved IR — better instruction selection, tighter loop structures, more aggressive inlining. Re-optimization happens between deployments, not within a running process. Each candidate is re-verified against the original contracts before promotion, ensuring that optimization never regresses correctness.
 
-5. **Reproducible execution.** WASM provides deterministic execution. The same IR, compiled to WASM, produces identical behavior on any platform.
+5. **Sandboxed client execution.** WASM provides sandboxed, portable execution for client-side code. The fractal demo compiles LLVM IR to WASM and runs in the browser with no plugins or extensions. Server-side code compiles to native binaries for maximum throughput (as demonstrated by the plaintext benchmark). The architecture targets WASM for client isolation and native for server performance.
 
 ### 9.2 What Remains Human
 

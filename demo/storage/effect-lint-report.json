@@ -1,0 +1,20 @@
+{
+  "status": "pass",
+  "timestamp": "2026-03-06T01:32:16Z",
+  "ir_file": "ips.ll",
+  "functions_total": 9,
+  "functions_passed": 9,
+  "error_count": 0,
+  "warning_count": 8,
+  "functions": [
+  {"fn": "main", "status": "pass", "declared": "libc.strcmp,libc.printf,libc.strtoll", "observed": "libc.printf libc.strcmp libc.strtoll", "warnings": ""},
+  {"fn": "cmd_init", "status": "pass", "declared": "libc.open,libc.close,libc.pwrite,libc.fsync,libc.printf", "observed": "libc.open libc.close libc.printf", "warnings": "declared effect 'libc.pwrite' not observed in body (may be in callee) declared effect 'libc.fsync' not observed in body (may be in callee)"},
+  {"fn": "cmd_show", "status": "pass", "declared": "libc.open,libc.close,libc.pread,libc.printf", "observed": "libc.open libc.close libc.printf", "warnings": "declared effect 'libc.pread' not observed in body (may be in callee)"},
+  {"fn": "cmd_add", "status": "pass", "declared": "libc.open,libc.close,libc.pread,libc.pwrite,libc.fsync,libc.printf", "observed": "libc.open libc.close libc.printf", "warnings": "declared effect 'libc.pread' not observed in body (may be in callee) declared effect 'libc.pwrite' not observed in body (may be in callee) declared effect 'libc.fsync' not observed in body (may be in callee)"},
+  {"fn": "cmd_corrupt", "status": "pass", "declared": "libc.open,libc.pwrite,libc.fsync,libc.close,libc.printf", "observed": "libc.open libc.pwrite libc.fsync libc.close libc.printf", "warnings": ""},
+  {"fn": "init_store_fd", "status": "pass", "declared": "libc.pwrite,libc.fsync", "observed": "none", "warnings": "declared effect 'libc.pwrite' not observed in body (may be in callee) declared effect 'libc.fsync' not observed in body (may be in callee)"},
+  {"fn": "write_header", "status": "pass", "declared": "libc.pwrite,libc.fsync", "observed": "libc.pwrite libc.fsync", "warnings": ""},
+  {"fn": "checksum_for", "status": "pass", "declared": "pure", "observed": "none", "warnings": ""},
+  {"fn": "read_header", "status": "pass", "declared": "libc.pread", "observed": "libc.pread", "warnings": ""}
+  ]
+}

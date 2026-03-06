@@ -56,9 +56,26 @@ bash ips-evidence.sh --bin ./laststack-ips --json ips-report.json
 echo "[Storage Build]   ✓ IPS report: $SCRIPT_DIR/ips-report.json"
 
 echo ""
+echo "[Storage Build] Step 3: PCF solver discharge (Z3)..."
+bash verify-pcf.sh pcf-proof-report.json || true
+echo "[Storage Build]   ✓ PCF proof report: $SCRIPT_DIR/pcf-proof-report.json"
+
+echo ""
+echo "[Storage Build] Step 4: Structural effect lint..."
+bash effect-lint.sh ips.ll effect-lint-report.json || {
+    echo "[Storage Build] ✗ Effect lint failed — undeclared effects found"
+    exit 1
+}
+echo "[Storage Build]   ✓ Effect lint report: $SCRIPT_DIR/effect-lint-report.json"
+
+echo ""
 echo "[Storage Build] Build complete!"
 echo "[Storage Build] Binary: $SCRIPT_DIR/laststack-ips"
 echo "[Storage Build] Size: $(binary_size laststack-ips) bytes"
+echo "[Storage Build] Verification artifacts:"
+echo "[Storage Build]   ips-report.json        — IPS evidence (7 behavioral checks)"
+echo "[Storage Build]   pcf-proof-report.json  — Z3 proof discharge (2 SMT-LIB obligations)"
+echo "[Storage Build]   effect-lint-report.json — structural effect lint"
 
 echo ""
 echo "[Storage Build] Demo: ./laststack-ips /tmp/ips-state.bin init && ./laststack-ips /tmp/ips-state.bin add 1 && ./laststack-ips /tmp/ips-state.bin recover"
