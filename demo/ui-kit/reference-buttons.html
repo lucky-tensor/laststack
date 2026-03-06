@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <title>Reference - Buttons</title>
+</head>
+<body class="bg-gray-50 min-h-screen p-8">
+
+    <h1 class="text-3xl font-bold text-gray-900 mb-8">Button Examples</h1>
+
+    <!-- Colors -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Colors</h2>
+        <div class="flex flex-wrap gap-4">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded">
+                Blue
+            </button>
+            <button class="bg-red-500 hover:bg-red-600 text-white font-semibold py-2 px-4 rounded">
+                Red
+            </button>
+            <button class="bg-green-500 hover:bg-green-600 text-white font-semibold py-2 px-4 rounded">
+                Green
+            </button>
+            <button class="bg-yellow-500 hover:bg-yellow-600 text-white font-semibold py-2 px-4 rounded">
+                Yellow
+            </button>
+            <button class="bg-purple-500 hover:bg-purple-600 text-white font-semibold py-2 px-4 rounded">
+                Purple
+            </button>
+            <button class="bg-pink-500 hover:bg-pink-600 text-white font-semibold py-2 px-4 rounded">
+                Pink
+            </button>
+            <button class="bg-gray-500 hover:bg-gray-600 text-white font-semibold py-2 px-4 rounded">
+                Gray
+            </button>
+            <button class="bg-indigo-500 hover:bg-indigo-600 text-white font-semibold py-2 px-4 rounded">
+                Indigo
+            </button>
+        </div>
+    </section>
+
+    <!-- Sizes -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Sizes</h2>
+        <div class="flex flex-wrap items-center gap-4">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-1 px-2 rounded text-sm">
+                Small
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded">
+                Default
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-6 rounded text-lg">
+                Large
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-bold py-4 px-8 rounded text-xl">
+                XL
+            </button>
+        </div>
+    </section>
+
+    <!-- Variants -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Variants</h2>
+        
+        <h3 class="text-lg font-medium text-gray-700 mb-2">Outline</h3>
+        <div class="flex flex-wrap gap-4 mb-6">
+            <button class="border-2 border-blue-500 text-blue-500 hover:bg-blue-500 hover:text-white font-semibold py-2 px-4 rounded">
+                Outline Blue
+            </button>
+            <button class="border-2 border-red-500 text-red-500 hover:bg-red-500 hover:text-white font-semibold py-2 px-4 rounded">
+                Outline Red
+            </button>
+            <button class="border-2 border-green-500 text-green-500 hover:bg-green-500 hover:text-white font-semibold py-2 px-4 rounded">
+                Outline Green
+            </button>
+        </div>
+
+        <h3 class="text-lg font-medium text-gray-700 mb-2">Ghost</h3>
+        <div class="flex flex-wrap gap-4 mb-6">
+            <button class="text-blue-500 hover:bg-blue-100 font-semibold py-2 px-4 rounded">
+                Ghost Blue
+            </button>
+            <button class="text-red-500 hover:bg-red-100 font-semibold py-2 px-4 rounded">
+                Ghost Red
+            </button>
+            <button class="text-green-500 hover:bg-green-100 font-semibold py-2 px-4 rounded">
+                Ghost Green
+            </button>
+        </div>
+    </section>
+
+    <!-- States -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">States</h2>
+        
+        <div class="flex flex-wrap gap-4 mb-6">
+            <button class="bg-blue-500 text-white font-semibold py-2 px-4 rounded">
+                Default
+            </button>
+            <button class="bg-blue-600 text-white font-semibold py-2 px-4 rounded">
+                Active (pressed)
+            </button>
+            <button class="bg-blue-300 text-white font-semibold py-2 px-4 rounded cursor-not-allowed" disabled>
+                Disabled
+            </button>
+        </div>
+
+        <h3 class="text-lg font-medium text-gray-700 mb-2">Focus Ring</h3>
+        <div class="flex flex-wrap gap-4">
+            <button class="bg-blue-500 text-white font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2">
+                Focus Ring
+            </button>
+            <button class="bg-red-500 text-white font-semibold py-2 px-4 rounded focus:outline-none focus:ring-2 focus:ring-red-500 focus:ring-offset-2">
+                Focus Red
+            </button>
+        </div>
+    </section>
+
+    <!-- Shadows -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Shadows</h2>
+        <div class="flex flex-wrap gap-4">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded shadow-sm">
+                Shadow Small
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded shadow">
+                Shadow Default
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded shadow-md">
+                Shadow Medium
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded shadow-lg">
+                Shadow Large
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded shadow-xl">
+                Shadow XL
+            </button>
+        </div>
+    </section>
+
+    <!-- Full Width -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">Full Width</h2>
+        <div class="max-w-xs">
+            <button class="w-full bg-blue-500 hover:bg-blue-600 text-white font-semibold py-3 px-4 rounded">
+                Full Width Button
+            </button>
+        </div>
+    </section>
+
+    <!-- Icon Buttons -->
+    <section class="mb-12">
+        <h2 class="text-xl font-semibold text-gray-800 mb-4">With Icons</h2>
+        <div class="flex flex-wrap gap-4">
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded flex items-center gap-2">
+                <span>←</span> Previous
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded flex items-center gap-2">
+                Next <span>→</span>
+            </button>
+            <button class="bg-blue-500 hover:bg-blue-600 text-white font-semibold py-2 px-4 rounded flex items-center gap-2">
+                <span>★</span> Star
+            </button>
+        </div>
+    </section>
+
+</body>
+</html>
