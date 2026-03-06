@@ -1033,37 +1033,23 @@ attributes #2 = { argmemonly nofree nounwind willreturn }
            (declare-const value (_ BitVec 64))
            (declare-const committed (_ BitVec 32))
            (assert (= result
-                      ((_ extract 31 0)
-                        (bvxor
-                          (bvmul
-                            (bvxor
-                              (bvlshr
-                                (bvmul
-                                  (bvxor
-                                    (bvlshr
-                                      (bvxor
-                                        (bvxor (bvxor (bvxor (bvxor ((_ zero_extend 32) magic)
-                                                                    ((_ zero_extend 32) version))
-                                                      epoch)
-                                                value)
-                                              ((_ zero_extend 32) committed))
-                                        #x9E3779B97F4A7C15)
-                                      (_ bv33 64))
-                                    (bvxor
-                                      (bvxor (bvxor (bvxor ((_ zero_extend 32) magic)
-                                                          ((_ zero_extend 32) version))
-                                                    epoch)
-                                              value)
-                                            ((_ zero_extend 32) committed))
-                                      #x9E3779B97F4A7C15))
-                                  #xFF51AFD7ED558CCD)
-                                (_ bv33 64))
-                            (bvmul ...))
-                          #xFF51AFD7ED558CCD)
-                          (_ bv33 64)))))"}
-!139 = !{!"pcf.proof", !"witness",
-         !"strategy: algebraic — fixed sequence of load/xor/mul/shift with no branches;
-           output depends solely on 5 input fields; determinism from absence of state"}
+             ((_ extract 31 0)
+               (let ((h0 (bvxor (bvxor (bvxor (bvxor ((_ zero_extend 32) magic)
+                                                      ((_ zero_extend 32) version))
+                                               epoch)
+                                       value)
+                               ((_ zero_extend 32) committed))))
+               (let ((h1 (bvxor h0 #x9E3779B97F4A7C15)))
+               (let ((h2 (bvxor h1 (bvlshr h1 (_ bv33 64)))))
+               (let ((h3 (bvmul h2 #xFF51AFD7ED558CCD)))
+               (bvxor h3 (bvlshr h3 (_ bv33 64))))))))))"}
+; PCF proof: discharged via Z3 in checksum-z3.smt2 (unsat confirms IR == spec)
+!139 = !{!"pcf.proof", !"lspc.v1",
+         !"method: z3-bv",
+         !"smt_file: demo/storage/checksum-z3.smt2",
+         !"expected: unsat",
+         !"scope: QF_BV — all 160-bit input vectors",
+         !"claim: implementation (IR bitvector ops) equals postcondition specification"}
 !140 = !{!"pcf.effects", !"pure"}
 !141 = !{!"pcf.bind", !"header->arg:%0,ret->result"}
 
