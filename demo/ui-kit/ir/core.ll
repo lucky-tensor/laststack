@@ -17,7 +17,7 @@ declare void @listen(i32 %node, i32 %event_id)
 ; Constants
 @tag_div = private unnamed_addr constant [3 x i8] c"div"
 @tag_h1 = private unnamed_addr constant [2 x i8] c"h1"
-@text_title = private unnamed_addr constant [27 x i8] c"Homomorphic UI Kit Demo     "
+@text_title = private unnamed_addr constant [27 x i8] c"Isomorphic UI Kit Demo     "
 
 declare i32 @create_card()
 declare i32 @create_button(i32 %text_ptr, i32 %text_len)

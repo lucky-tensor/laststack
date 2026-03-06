@@ -10,7 +10,7 @@ declare void @set_text(i32 %node, i32 %text_ptr, i32 %text_len)
 @tag_style = private unnamed_addr constant [5 x i8] c"style"
 
 ; The raw CSS definitions that exactly match the classes used in components.ll
-; This keeps the styling homomorphically derived from the Wasm module.
+; This keeps the styling isomorphically derived from the Wasm module.
 @css_payload = private unnamed_addr constant [738 x i8] c"
 /* Base/Reset */
 body { background-color: #f9fafb; color: #0f172a; font-family: ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, \22Segoe UI\22, Roboto, \22Helvetica Neue\22, Arial, sans-serif; display: flex; align-items: center; justify-content: center; padding: 2rem; min-height: 100vh; margin: 0; }

@@ -1,10 +1,10 @@
-# The Last Stack: Homomorphic AI-Native Client Architecture
+# The Last Stack: Isomorphic AI-Native Client Architecture
 
 **Version 1.0 - March 2026**
 
 ## Abstract
 
-This paper extends the LastStack server-side architecture (see `docs/white-paper.md`, v1.2) to client execution environments. It introduces a **homomorphic client architecture** in which all application policy, layout, and state reside in AI-generated WebAssembly modules, and the browser is treated as a minimal host substrate—a window-system microkernel. This document applies the same empirical, evidence-first methodology and conformance-level model as the server-side specification: claims are grounded in observable repository state, conformance levels are measurement-based rather than aspirational, and hypotheses are falsifiable.
+This paper extends the LastStack server-side architecture (see `docs/white-paper.md`, v1.2) to client execution environments. It introduces a **isomorphic client architecture** in which all application policy, layout, and state reside in AI-generated WebAssembly modules, and the browser is treated as a minimal host substrate—a window-system microkernel. This document applies the same empirical, evidence-first methodology and conformance-level model as the server-side specification: claims are grounded in observable repository state, conformance levels are measurement-based rather than aspirational, and hypotheses are falsifiable.
 
 The client architecture is a direct extension of the LastStack thesis:
 
@@ -53,9 +53,9 @@ The refinements:
 
 ## 3. Architecture
 
-### 3.1 Homomorphic Execution Model
+### 3.1 Isomorphic Execution Model
 
-A **homomorphic codebase** is defined operationally: internal program representations are directly and verifiably preserved in the deployment artifact. On the server, LLVM IR is the canonical representation. On the client, WebAssembly is the canonical representation. Both satisfy the same structural requirements:
+An **isomorphic codebase** is defined operationally: internal program representations are directly and verifiably preserved in the deployment artifact. On the server, LLVM IR is the canonical representation. On the client, WebAssembly is the canonical representation. Both satisfy the same structural requirements:
 
 - Deterministic semantics: no hidden scheduling, reconciliation, or reactive framework policies.
 - Extractable structure: agent tooling can parse, annotate, and reason about the module without executing it.
@@ -234,7 +234,7 @@ The following are **not permitted** in a conformant client build. This is not a 
 | NPM/bundler dependency graph | Introduces transitive code not authored or verified by the agent; violates TCB minimality. |
 | Dynamic import / code splitting | Breaks artifact seal: deployed behavior is not fully determined by the sealed manifest. |
 | `async`/`await` in shim | Any scheduling policy in the shim is host policy; must be zero. Shim is synchronous. |
-| `eval`, `Function()`, dynamic code | Unverifiable; violates homomorphic property. |
+| `eval`, `Function()`, dynamic code | Unverifiable; violates isomorphic property. |
 
 These eliminations are not novel constraints. They are the client-side application of the same principle that motivates eliminating libc wrappers and framework abstractions on the server: every layer that the agent does not author and that the verifier cannot inspect is a gap in the correctness proof.
 
@@ -335,3 +335,82 @@ A LastStack-compliant client release must satisfy all of:
 - CI benchmark and hypothesis evidence archived and reproducible.
 
 This specification keeps everything working from the server-side architecture (PCF, artifact seal, structural graph, verifier policy) and adds only what is specific to the client: a normative ABI, Wasm module requirements, and a client-specific conformance ladder.
+
+---
+
+## Appendix A: Reference Shim Implementation
+
+This appendix provides a **normative reference implementation** of the browser shim conforming to `laststack.client.abi.v1`. The implementation is 43 lines and satisfies all constraints from §3.2–§3.5.
+
+```javascript
+// laststack.client.abi.v1 shim
+// Reference implementation - §A
+
+const handles = new Map();
+let next_handle = 1;
+handles.set(1, document.getElementById('root'));
+
+let wasmExports = null;
+let memory = null;
+
+const getStr = (ptr, len) => new TextDecoder('utf-8')
+    .decode(new Uint8Array(memory.buffer, ptr, len));
+
+const events = { 1: 'click', 2: 'input', 3: 'mouseenter', 4: 'mouseleave', 5: 'focus', 6: 'blur' };
+
+const env = {
+    dom_create: (tag_ptr, tag_len) => {
+        const node = document.createElement(getStr(tag_ptr, tag_len));
+        const handle = ++next_handle;
+        handles.set(handle, node);
+        return handle;
+    },
+    dom_append: (parent, child) => handles.get(parent).appendChild(handles.get(child)),
+    dom_set_text: (node, ptr, len) => { handles.get(node).textContent = getStr(ptr, len); },
+    dom_set_attr: (node, k_p, k_l, v_p, v_l) => {
+        const key = getStr(k_p, k_l);
+        const val = getStr(v_p, v_l);
+        if (key === 'value') handles.get(node).value = val;
+        else handles.get(node).setAttribute(key, val);
+    },
+    dom_listen: (node_handle, event_id) => {
+        const node = handles.get(node_handle);
+        node.addEventListener(events[event_id], () => wasmExports.on_event(node_handle, event_id));
+    },
+    dom_remove: (n) => { handles.get(n).remove(); handles.delete(n); },
+    perf_now: () => performance.now(),
+    raf_request: (cb_id) => requestAnimationFrame((t) => wasmExports.on_frame(t))
+};
+
+WebAssembly.instantiateStreaming(fetch('app.wasm'), { env }).then(res => {
+    wasmExports = res.instance.exports;
+    memory = wasmExports.memory;
+    wasmExports.init();
+});
+```
+
+### §A.1 Shim Invariants
+
+| Invariant | Description |
+|---|---|
+| Handle 1 is root | `document.getElementById('root')` must exist in HTML |
+| No state in shim | All application state resides in Wasm linear memory |
+| No scheduling | Shim provides no timers, queues, or event loop management |
+| Event forwarding only | Events map to Wasm `on_event(handle, event_id)` calls |
+| UTF-8 memory access | Shim reads strings from Wasm memory via `(ptr, len)` pairs |
+
+### §A.2 HTML Entry Point
+
+The shim requires a minimal HTML host:
+
+```html
+<!DOCTYPE html>
+<html>
+<head><meta charset="UTF-8"></head>
+<body id="root">
+    <script type="module" src="shim.js"></script>
+</body>
+</html>
+```
+
+The Wasm module is responsible for creating all child nodes under `#root` (handle 1) and injecting any required `<style>` elements.

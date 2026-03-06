@@ -24,8 +24,8 @@ declare void @listen(i32 %node, i32 %event_id)
 
 ; Tailwind Class Strings (Pixel Perfect Mappings)
 
-; Card length: 66
-@class_card = private unnamed_addr constant [66 x i8] c"bg-white shadow-lg rounded-xl p-8 max-w-md w-full mx-auto border\00"
+; Card length: 65
+@class_card = private unnamed_addr constant [65 x i8] c"bg-white shadow-lg rounded-xl p-8 max-w-md w-full mx-auto border\00"
 
 ; Button classes
 ; Normal length: 83
