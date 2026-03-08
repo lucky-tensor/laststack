@@ -20,6 +20,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y clang-18 llvm-18 lld-18
 
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install dependencies
+        run: |
+          cd demo/ui-kit
+          bun install
+          bunx playwright install --with-deps chromium
+
       - name: Run UI Kit Build
         run: |
           chmod +x demo/ui-kit/build.sh
@@ -27,10 +38,14 @@ jobs:
           export CLANG_CMD=clang-18
           ./demo/ui-kit/build.sh
 
-      - name: Verify Artifact
+      - name: Run Screenshot Capture
         run: |
-          if [ ! -f demo/ui-kit/app.wasm ]; then
-            echo "Error: app.wasm was not generated"
-            exit 1
-          fi
-          echo "Build successful: app.wasm exists"
+          cd demo/ui-kit
+          # capture.bun.ts expects the html file as first arg
+          bun run scripts/capture.bun.ts index.html ci-capture
+
+      - name: Upload Capture Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: ui-kit-capture
+          path: /tmp/laststack-captures/ci-capture/
