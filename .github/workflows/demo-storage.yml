@@ -1,0 +1,32 @@
+name: demo-storage
+
+on:
+  push:
+    branches: [master, ci/demo-verification]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  verify-storage:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Z3
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y z3
+
+      - name: Run Z3 Internal Proof Checks
+        working-directory: demo/storage
+        run: |
+          bash verify-pcf.sh
+
+      - name: Upload Verification Report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storage-verification-report
+          path: demo/storage/pcf-proof-report.json

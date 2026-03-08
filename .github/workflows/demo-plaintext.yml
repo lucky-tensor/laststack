@@ -1,0 +1,51 @@
+name: demo-plaintext
+
+on:
+  push:
+    branches: [master, ci/demo-verification]
+  pull_request:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  build-and-verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: |
+          sudo apt-get update -y
+          sudo apt-get install -y clang build-essential curl
+
+      - name: Build and Verify
+        working-directory: demo/plaintext
+        run: |
+          bash build.sh
+
+      - name: Test Server Response
+        working-directory: demo/plaintext
+        run: |
+          ./alienstack-plaintext > server.log 2>&1 &
+          PID=$!
+          sleep 2
+          RESPONSE=$(curl -s http://127.0.0.1:18081/plaintext)
+          kill $PID
+          echo "Response: $RESPONSE"
+          if [[ "$RESPONSE" == *"Hello, World!"* ]]; then
+            echo "✓ Response matches expected output"
+          else
+            echo "✗ Unexpected response: $RESPONSE"
+            cat server.log
+            exit 1
+          fi
+
+      - name: Upload Reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: plaintext-reports
+          path: |
+            demo/plaintext/verification-report.json
+            demo/plaintext/link-gate-report.json
