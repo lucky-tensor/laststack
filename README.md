@@ -1,6 +1,6 @@
 # LastStack: Why Alien?
 
-We set out to find if, in Q1 2026, agents could write superhuman code. There is an opportunity for software to take a quantum leap: software which is proven to be correct, tree-shaken, and free to self-improve with a lack of dependencies.
+We set out to find if, in Q1 2026, agents could write superhuman code. There is an opportunity for software to take a quantum leap: software which is proven to be correct, tree-shaken, and free to self-improve unconstrained by human patterns or the tools they depend on.
 
 Currently, if an agent is asked to build a product, it will do what a junior developer would do: search the internet for prior art, choose libraries written by other humans, set up a development environment, and brute-force the features with write-run loops. Today, it’s widely reported that humans aren't even reviewing agent code that is being shipped to production.
 
@@ -11,6 +11,14 @@ It’s been speculated a super agent might just need binary, and write binary. W
 4. **Efficiency**: Thoroughly tree-shaken, with nothing extraneous.
 
 Why this stack? It’s likely ephemeral because of the current state of agent tools. Agents want to read text files sequentially and discover them via disk searches (like `ripgrep`). We can’t yet feed it a specialized graph binary of a program’s semantics—but that day may soon arrive, and we’ll keep trying.
+
+---
+
+## Open Research
+
+In the short term, Dot Matrix Labs uses this to improve our understanding of end-to-end Rust-based "supergreenfield" apps (Calypso RS). 
+
+Long term, we're curious whether there is a graph representation of the code which can be ingested faster by agents, potentially obviating text files like LLVM IR. We are also exploring different ways of proving correctness beyond the current toolchain (Z3 SMT).
 
 ---
 
