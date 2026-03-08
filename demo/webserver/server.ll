@@ -80,9 +80,9 @@ target triple = "x86_64-pc-linux-gnu"
 @content_length_str    = private unnamed_addr constant [4  x i8]  c"337\00"
 
 ; @global server messages
-@msg_start        = private unnamed_addr constant [46 x i8] c"[Alien Stack] Server listening on port 9090...\0A\00"
+@msg_start        = private unnamed_addr constant [48 x i8] c"[Alien Stack] Server listening on port 9090...\0A\00"
 @msg_error_socket = private unnamed_addr constant [37 x i8] c"[Alien Stack] Error: socket failed.\0A\00"
-@msg_error_bind   = private unnamed_addr constant [33 x i8] c"[Alien Stack] Error: bind failed.\0A\00"
+@msg_error_bind   = private unnamed_addr constant [35 x i8] c"[Alien Stack] Error: bind failed.\0A\00"
 @msg_error_listen = private unnamed_addr constant [37 x i8] c"[Alien Stack] Error: listen failed.\0A\00"
 @msg_invariant_ok = private unnamed_addr constant [53 x i8] c"[Alien Stack] Invariant check: all invariants hold.\0A\00"
 
@@ -160,7 +160,7 @@ target triple = "x86_64-pc-linux-gnu"
 @file_load_buf = global [262144 x i8] zeroinitializer, align 16
 
 ; Startup messages
-@msg_load_ok   = private unnamed_addr constant [28 x i8] c"[Alien Stack] Assets loaded.\0A\00"
+@msg_load_ok   = private unnamed_addr constant [30 x i8] c"[Alien Stack] Assets loaded.\0A\00"
 @msg_load_fail = private unnamed_addr constant [41 x i8] c"[Alien Stack] Error: asset load failed.\0A\00"
 
 ; ============================================================================
