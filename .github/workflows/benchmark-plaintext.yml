@@ -2,7 +2,7 @@ name: benchmark-plaintext
 
 on:
   schedule:
-    - cron: '0 2 * * *' # Nightly at 02:00 UTC
+    - cron: '27 5 * * *' # Nightly at 05:27 UTC
   workflow_dispatch:
 
 jobs:

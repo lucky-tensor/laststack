@@ -2,7 +2,7 @@ name: benchmark-webserver
 
 on:
   schedule:
-    - cron: '30 2 * * *' # Nightly at 02:30 UTC
+    - cron: '53 5 * * *' # Nightly at 05:53 UTC
   workflow_dispatch:
 
 jobs:

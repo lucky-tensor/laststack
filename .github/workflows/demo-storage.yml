@@ -6,7 +6,7 @@ on:
   pull_request:
     branches: [master]
   schedule:
-    - cron: '0 1 * * *' # Nightly at 01:00 UTC
+    - cron: '12 4 * * *' # Nightly at 04:12 UTC
   workflow_dispatch:
 
 jobs:
