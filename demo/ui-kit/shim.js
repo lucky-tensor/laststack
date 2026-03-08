@@ -1,5 +1,6 @@
 // laststack.client.abi.v1 shim
-// A STRICT ≤50-line microkernel device driver for the browser.
+
+const wasmFile = 'view.wasm';
 
 const handles = new Map();
 let next_handle = 1;
@@ -36,7 +37,7 @@ const env = {
 };
 
 // Instantiate and initialize the AI-generated Wasm policy module
-WebAssembly.instantiateStreaming(fetch('app.wasm'), { env }).then(res => {
+WebAssembly.instantiateStreaming(fetch(wasmFile), { env }).then(res => {
     wasmExports = res.instance.exports;
     memory = wasmExports.memory;
     wasmExports.init();

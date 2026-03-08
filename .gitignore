@@ -5,6 +5,13 @@
 # Compiled WebAssembly
 *.wasm
 
+# Node dependencies
+node_modules/
+demo/*/node_modules/
+package-lock.json
+bun.lockb
+bun.lock
+
 # Built binaries
 laststack-server
 laststack-bench
