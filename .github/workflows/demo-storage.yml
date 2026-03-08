@@ -5,6 +5,8 @@ on:
     branches: [master, ci/demo-verification]
   pull_request:
     branches: [master]
+  schedule:
+    - cron: '0 1 * * *' # Nightly at 01:00 UTC
   workflow_dispatch:
 
 jobs:
