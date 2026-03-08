@@ -712,7 +712,7 @@ The demo accompanying this paper — a webserver written as LLVM IR with inline 
 
 The tools exist today. Grep exists. LLVM IR is mature. SMT solvers are fast. WASM runtimes are production-grade. What remains is convention: agreeing on the tags, writing them consistently, and building the habit of treating comments as navigable structure rather than prose.
 
-This is the Alien Stack. It starts with a comment.
+This is the last stack. It starts with a comment.
 
 ---
 

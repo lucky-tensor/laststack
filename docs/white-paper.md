@@ -508,7 +508,7 @@ Every stage is independently useful. You don't need to believe in the long-term 
 
 The tools exist. Grep exists. LLVM IR is mature. SMT solvers are fast. WASM runtimes are production-grade. What remains is convention: agreeing on the tags, writing them consistently, and building the habit of treating comments as navigable structure rather than prose.
 
-This is the Alien Stack. It starts with a comment.
+This is the last stack. It starts with a comment.
 
 ---
 

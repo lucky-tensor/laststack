@@ -195,7 +195,7 @@ This is an implementation maturity statement, not a philosophy change.
 
 ## 7. Definition of Done
 
-A Alien Stack-compliant release must satisfy all of:
+An Alien Stack-compliant release must satisfy all of:
 - Canonical LLVM IR behavior modules.
 - Full PCF coverage on exported/critical interfaces.
 - Fail-closed verifier and link gate in the build path.
