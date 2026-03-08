@@ -1,6 +1,13 @@
-# Homomorphic UI Kit Demo
+# Isomorphic UI Kit Demo
 
 This demo showcases a premium, interactive UI component library built under the strict constraints of the LastStack architecture.
+
+## Mission & Objective
+
+The goal of this demo is to prove that agents can:
+1.  **Replace JS Frameworks**: Eliminate React, Vue, Svelte, and their associated runtimes/complexities.
+2.  **Replace CSS Frameworks**: Eliminate Bootstrap, Tailwind, and static CSS delivery.
+3.  **Extreme Tree-shaking**: Deliver only the exact machine code (Wasm) required for the specific UI, minimizing the footprint on the browser runtime.
 
 ## Architecture
 

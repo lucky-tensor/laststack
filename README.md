@@ -97,7 +97,7 @@ cd demo/storage
 ```
 
 ### 4. Isomorphic UI Kit (`demo/ui-kit`)
-A demonstration of a feature-rich, interactive UI component library where all logic and styling reside in a Wasm module compiled from LLVM IR. 
+A demonstration of a feature-rich, interactive UI component library that aims to **replace JS frameworks (React, etc.) and CSS frameworks (Bootstrap, Tailwind, etc.)**. All logic and styling reside in a Wasm module compiled from LLVM IR, achieving extreme tree-shaking for the browser runtime.
 *(See: [README.md](demo/ui-kit/README.md))*
 
 **To build and run:**

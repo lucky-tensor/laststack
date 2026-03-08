@@ -1,14 +1,14 @@
-# Homomorphic UI Kit Demo Specification
+# Isomorphic UI Kit Demo Specification
 
-This document defines the requirements, constraints, and architecture for the Homomorphic UI Kit demonstration component library in the LastStack repository.
+This document defines the requirements, constraints, and architecture for the Isomorphic UI Kit demonstration component library in the LastStack repository.
 
 ## 1. Goal
 
-Create a demonstration of a feature-rich, interactive UI component library that provides modern, premium aesthetics (similar to Tailwind CSS), but operates under the strict constraints of the LastStack client architecture (`docs/white-paper-client.md`).
+Create a demonstration of a feature-rich, interactive UI component library that provides modern, premium aesthetics (similar to Tailwind CSS), but operates under the strict constraints of the LastStack client architecture (`docs/white-paper-client.md`). The objective is to **completely replace high-level JS frameworks (React, etc.) and CSS frameworks (Bootstrap, Tailwind, etc.)** with agent-optimized, proof-carrying IR, resulting in extreme tree-shaking for the browser runtime.
 
 ## 2. Constraints (Non-Negotiable)
 
-- **Homomorphic Compliance**: All UI policy, layout logic, interaction state, AND CSS style generation must reside exclusively in a WebAssembly module compiled from LLVM IR (`.ll` files). External static CSS files (like Tailwind CDNs) are prohibited.
+- **Isomorphic Compliance**: All UI policy, layout logic, interaction state, AND CSS style generation must reside exclusively in a WebAssembly module compiled from LLVM IR (`.ll` files). External static CSS files (like Tailwind CDNs) are prohibited.
 - **Device Driver Shim**: The JavaScript execution environment is limited to the `laststack.client.abi.v1` specification. The logic is inlined in `index.html` (≤50 lines) and provides no runtime scheduling or state management.
 - **No JS Frameworks**: React, Vue, Svelte, or any other JavaScript-based UI libraries are strictly prohibited.
 - **Dynamic CSS Injection**: The IR logic must generate the raw CSS strings for its components and dynamically inject them into the DOM upon initialization.
