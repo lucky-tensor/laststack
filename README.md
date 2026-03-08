@@ -18,7 +18,7 @@ Why this stack? It’s likely ephemeral because of the current state of agent to
 
 # The Stack
 
-Alien Stack is an architecture for **agent-native software development**, described in detail in the [Alien Stack Whitepaper](docs/white-paper-8e030f0f.md). It's intentionally alien.
+Alien Stack is an architecture for **agent-native software development**, described in detail in the [Alien Stack Whitepaper](docs/alien-stack-whitepaper.md). It's intentionally alien.
 
 The paper imagines a future where humans stop writing text-based source code to accommodate human cognitive constraints, and instead direct agent coders to generate and optimize **Proof-Carrying Functions (PCFs)** directly in LLVM IR. Text becomes a view for documentation and structural navigation, while the machine-checkable contracts, invariants, and effects become the authoritative interface.
 
@@ -109,4 +109,4 @@ CI jobs automatically track compliance and record latency snapshots (artifacts) 
 
 ## Further Reading
 
-- [Alien Stack Whitepaper](docs/white-paper-8e030f0f.md) (The core architecture)
+- [Alien Stack Whitepaper](docs/alien-stack-whitepaper.md) (The core architecture)
