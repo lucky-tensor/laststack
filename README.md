@@ -1,6 +1,5 @@
 # Alien Stack 
 
-Alien LLVVM Intermedary Representation Environment
 ## Why
 
 We set out to find if, in Q1 2026, agents could write superhuman code. There is an opportunity for software to take a quantum leap: software which is proven to be correct, tree-shaken, and free to self-improve unconstrained by human patterns or the tools they depend on.
@@ -17,21 +16,21 @@ Why this stack? It’s likely ephemeral because of the current state of agent to
 
 ---
 
-## Open Research
-
-In the short term, Dot Matrix Labs uses this to improve our understanding of end-to-end Rust-based "supergreenfield" apps (Calypso RS). 
-
-Long term, we're curious whether there is a graph representation of the code which can be ingested faster by agents, potentially obviating text files like LLVM IR. We are also exploring different ways of proving correctness beyond the current toolchain (Z3 SMT).
-
----
-
-# Alien Stack
+# The Stack
 
 Alien Stack is an architecture for **agent-native software development**, described in detail in the [Alien Stack Whitepaper](docs/white-paper.md). It's intentionally alien.
 
 The paper imagines a future where humans stop writing text-based source code to accommodate human cognitive constraints, and instead direct agent coders to generate and optimize **Proof-Carrying Functions (PCFs)** directly in LLVM IR. Text becomes a view for documentation and structural navigation, while the machine-checkable contracts, invariants, and effects become the authoritative interface.
 
 This repository demonstrates the feasibility of this architecture through end-to-end (e2e) web development and storage demos, proving that agents can construct complete systems directly in LLVM IR that compete with (or outperform) traditional high-level abstractions.
+
+---
+
+## Open Research
+
+In the short term, Dot Matrix Labs uses this to improve our understanding of end-to-end Rust-based "supergreenfield" apps (Calypso RS). 
+
+Long term, we're curious whether there is a graph representation of the code which can be ingested faster by agents, potentially obviating text files like LLVM IR. We are also exploring different ways of proving correctness beyond the current toolchain (Z3 SMT).
 
 ---
 
