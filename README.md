@@ -26,7 +26,7 @@ Alien Stack is an architecture for **agent-native software development**, descri
 
 The paper imagines a future where humans stop writing text-based source code to accommodate human cognitive constraints, and instead direct agent coders to generate and optimize **Proof-Carrying Functions (PCFs)** directly in LLVM IR. Text becomes a view for documentation and structural navigation, while the machine-checkable contracts, invariants, and effects become the authoritative interface.
 
-This repository demonstrates the feasibility of this architecture through end-to-end (e2e) web development and storage demos, proving that agents can construct complete systems directly in LLVM IR that compete with (or outperform) traditional high-level abstractions.
+This repository contains proof-of-concept demonstrations that validate the foundational claims of the architecture. The demos are not production software — they exist to show that agents can construct complete, working systems directly in LLVM IR, and that doing so is faster, more self-contained, and surprisingly competitive with traditional high-level abstractions.
 
 ---
 
@@ -111,9 +111,9 @@ cd demo/ui-kit
 
 ## Plaintext Benchmark Results
 
-In an automated CI benchmark reflecting the TFB plaintext profile (using `wrk` on a single core), the agent-authored LLVM IR implementation outperforms the equivalent Rust Hyper baseline. 
+Automated CI benchmark reflecting the TFB plaintext profile (`wrk`, shared GitHub Actions runner, 4 threads, 15s per level). The LLVM IR server outperforms the Rust Hyper baseline at low-to-medium concurrency. At saturation (c=16384), Hyper's async runtime holds better — expected, given the IR server uses a single-threaded accept loop.
 
-*(Note: This represents the agent's first pass at both implementations).*
+*(Both implementations represent an agent's first pass. No hand-tuning was applied to either.)*
 
 ### LLVM IR Baseline (`demo/plaintext/plaintext.ll`)
 | Concurrency | Requests/sec | Latency |

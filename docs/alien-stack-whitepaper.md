@@ -2,6 +2,8 @@
 
 **Version 2.0 — March 2026**
 
+> **Research Paper.** This document is a scientific specification. It defines an architecture, the formal properties it requires, and falsifiable hypotheses for evaluation. The accompanying repository contains proof-of-concept demonstrations that validate the foundational claims. The demos are not production software — they exist to show that the core ideas are technically coherent and implementable. The full architecture (L2–L4 conformance, solver-backed verification, mechanically checked proof certificates) remains future work.
+
 ---
 
 ## Abstract
@@ -177,9 +179,7 @@ Five greps. Complete system understanding. No sidecar, no database, no tooling.
 
 - Every declared edge must reference a declared node id.
 - `@calls` and `@called-by` must be logically consistent where both are present.
-- Extracted graph output is deterministic for a fixed file set and parser version.
-
-`tools/extract-graph` is the canonical parser for this layer.
+- Graph traversal is performed directly via grep against the source files. No parser or sidecar tool is required — the annotation convention is self-sufficient.
 
 ---
 
@@ -255,7 +255,7 @@ Data structures in Alien Stack are **Invariant-Preserving Structures**: typed bi
 
 | Component | Description |
 |-----------|-------------|
-| **Layout** | Binary layout schema (FlatBuffers / Cap'n Proto). Zero-copy, zero-parse. |
+| **Layout** | Binary layout schema (e.g. FlatBuffers). Zero-copy, zero-parse. |
 | **Invariants** | SMT assertions over field values that must hold at all times. |
 | **Accessors** | PCFs that read or mutate fields while preserving invariants. |
 | **Recovery** | Validation rules: checksum/version/invariants checked before exposure. |
@@ -379,12 +379,12 @@ TCB scope: LLVM toolchain components, verifier/checker binaries, linker/sealing 
 
 | Alien Stack Component | Existing Tool | Role |
 |---------------------|---------------|------|
-| Structural graph annotations | grep / `tools/extract-graph` | Call graph, data flow, CFG traversal via @tags |
+| Structural graph annotations | grep | Call graph, data flow, CFG traversal via @tags |
 | IR representation | LLVM 14+ | Code storage, optimization, compilation |
 | WASM compilation | LLVM wasm32 backend | IR → WASM bytecode |
 | WASM execution | Wasmtime / Wasmer | Sandboxed runtime with WASI |
 | SMT solving | Z3 / CVC5 | Proof discharge, invariant checking |
-| Binary data formats | FlatBuffers / Cap'n Proto | Zero-copy IPS layouts |
+| Binary data formats | FlatBuffers | Zero-copy IPS layouts |
 | Memory persistence | mmap + msync | MFO backing store |
 | Proof format | Lean 4 / Coq export | Proof witness generation (future) |
 | Fuzzing | libFuzzer / AFL | IR-level mutation testing |
@@ -519,6 +519,5 @@ This is the last stack. It starts with a comment.
 3. Haas, A., et al. (2017). Bringing the Web up to Speed with WebAssembly. *PLDI '17*.
 4. Necula, G. C. (1997). Proof-Carrying Code. *POPL '97*.
 5. Google. (2014). FlatBuffers: Memory Efficient Serialization Library.
-6. Sandstrom, K., et al. (2014). Cap'n Proto: Infinity Times Faster Than Protocol Buffers.
-7. Bytecode Alliance. (2019). Wasmtime: A Fast and Secure Runtime for WebAssembly.
-8. WASI. (2019). WebAssembly System Interface. *Bytecode Alliance*.
+6. Bytecode Alliance. (2019). Wasmtime: A Fast and Secure Runtime for WebAssembly.
+7. WASI. (2019). WebAssembly System Interface. *Bytecode Alliance*.

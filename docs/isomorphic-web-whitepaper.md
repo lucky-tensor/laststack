@@ -2,6 +2,8 @@
 
 **Version 1.0 - March 2026**
 
+> **Research Paper.** This document is a scientific specification. It defines an architecture, the formal properties it requires, and falsifiable hypotheses for evaluation. The accompanying repository contains a proof-of-concept demonstration (`demo/ui-kit`) that validates the foundational claims. The demo is not production software — it exists to show that the core ideas are technically coherent and implementable. Full conformance (CL2–CL4) remains future work.
+
 ## Abstract
 
 This paper extends the Alien Stack server-side architecture (see `docs/alien-stack-whitepaper.md`, v1.2) to client execution environments. It introduces a **isomorphic client architecture** in which all application policy, layout, and state reside in AI-generated WebAssembly modules, and the browser is treated as a minimal host substrate—a window-system microkernel. The primary objective is to **completely replace high-level JS frameworks (React, Vue) and CSS frameworks (Bootstrap, Tailwind)** with agent-optimized, proof-carrying IR, achieving extreme tree-shaking for the browser runtime. This document applies the same empirical, evidence-first methodology and conformance-level model as the server-side specification: claims are grounded in observable repository state, conformance levels are measurement-based rather than aspirational, and hypotheses are falsifiable.
@@ -23,7 +25,7 @@ Observed client-relevant facts:
 - **Isomorphic UI Kit Demo**: A functional client implementation exists in `demo/ui-kit`. It uses LLVM IR (`ir/button.ll`) to generate both UI logic and dynamic CSS, compiled to Wasm.
 - **Inlined JS Shim**: A minimal (<50 lines) browser ABI is implemented directly in `demo/ui-kit/index.html`, instantiating the Wasm module and providing syscalls.
 - **No JS/CSS Frameworks**: The demo successfully renders a interactive UI with zero external dependencies (React, Tailwind, etc.).
-- Structural graph comment infrastructure (`@module`, `@fn`, `@calls`, etc.) and `tools/extract-graph` are the current agent-navigable annotations layer; this infrastructure applies equally to client Wasm as to server IR.
+- Structural graph comment infrastructure (`@module`, `@fn`, `@calls`, etc.) are the current agent-navigable annotations layer; agents traverse these via grep. This infrastructure applies equally to client Wasm as to server IR.
 - CI benchmark reporting is operational and provides the measurement baseline for any performance hypotheses.
 
 This paper does not claim client implementation exists. It specifies what a conformant client implementation must contain and provides a conformance-level ladder analogous to the one defined in `docs/alien-stack-whitepaper.md`.
@@ -161,7 +163,7 @@ The same structural graph comment conventions defined in `docs/white-paper.md §
 - Edge tags: `@calls`, `@reads`, `@writes`, `@exports`, `@emits`
 - Contract-adjacent tags: `@pre`, `@post`, `@effects`, `@proof`
 
-`tools/extract-graph` is extended (or a parallel tool provided) to parse WAT comment syntax. Structural invariants are identical to the server-side requirements.
+The same grep-based traversal used on server IR applies directly to WAT comment syntax. Structural invariants are identical to the server-side requirements.
 
 ### 3.7 Contract Layer (Normative)
 
@@ -247,7 +249,7 @@ These eliminations are not novel constraints. They are the client-side applicati
 | **Formal correctness** | PCF contracts on Wasm exports; fail-closed verifier in build. |
 | **Deterministic execution** | No hidden framework scheduling; all control flow in Wasm. |
 | **Minimal TCB** | ~50-line JS shim + Wasm module + browser primitives only. |
-| **Agent navigability** | Structural graph comments; `tools/extract-graph` parses module without execution. |
+| **Agent navigability** | Structural graph comments; agents traverse via grep without execution. |
 | **Cross-runtime portability** | Same Wasm module targets browser, embedded Wasm runtimes, or WASI-compliant hosts with a different shim. |
 | **Auditable release** | Artifact seal with digests of all executable components. |
 | **Scalable complexity** | Agent can generate arbitrarily complex UI policy; correctness is bounded by verification, not by human readability. |
@@ -260,7 +262,7 @@ Conformance levels mirror the server-side ladder from `docs/white-paper.md §4`.
 
 | Level | Name | Criteria |
 |---|---|---|
-| **CL0** | Structural | WAT module has structural graph comments; `extract-graph` (or equivalent) parses and validates consistency. |
+| **CL0** | Structural | WAT module has structural graph comments; agent can traverse call graph and invariants via grep. |
 | **CL1** | ABI-Compliant | Module imports only `alien-stack.client.abi.v1` syscalls; no framework dependencies; JS shim is ≤100 lines with no scheduler. |
 | **CL2** | Contract Complete | All exported functions (`init`, `on_event`, `on_frame`) have full PCF metadata. |
 | **CL3** | Verified | Fail-closed verifier and link gate in build; verifier uncertainty policy enforced. |
@@ -330,7 +332,7 @@ This is an implementation maturity statement. The specification is ready; the im
 
 A Alien Stack-compliant client release must satisfy all of:
 
-- WAT or Wasm module with structural graph annotations, parseable by `extract-graph` or equivalent.
+- WAT or Wasm module with structural graph annotations, traversable by grep.
 - Module imports only from `alien-stack.client.abi.v1`; JS shim ≤100 lines, no scheduler.
 - Full PCF coverage on all exported functions.
 - Fail-closed verifier and link gate pass in build path.
