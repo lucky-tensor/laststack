@@ -17,6 +17,13 @@ if command -v brew >/dev/null 2>&1; then
     export PATH="$(brew --prefix llvm)/bin:$PATH"
 fi
 
+# Fallback for wasm-ld if not in path
+if ! command -v wasm-ld >/dev/null 2>&1; then
+    if [ -f "/usr/local/Cellar/llvm@15/15.0.7/bin/wasm-ld" ]; then
+        export PATH="/usr/local/Cellar/llvm@15/15.0.7/bin:$PATH"
+    fi
+fi
+
 # Look for clang-18, clang etc since Apple clang doesn't support wasm
 CLANG_CMD="clang"
 if command -v clang-18 >/dev/null 2>&1; then
@@ -33,4 +40,4 @@ $CLANG_CMD --target=wasm32-unknown-unknown -nostdlib -O3 \
     -Wl,--allow-undefined \
     ir/*.ll -o app.wasm
 
-echo "Successfully built app.wasm"
+echo "Successfully built Alien Stack app.wasm"

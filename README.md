@@ -35,7 +35,7 @@ This repository demonstrates the feasibility of this architecture through end-to
 The Alien Stack is built on three pillars that redefine the relationship between agents and code:
 
 ### 1. Isomorphic Architecture
-An **isomorphic codebase** means internal program representations (LLVM IR) are directly and verifiably preserved in the deployment artifact (WebAssembly). Unlike traditional web stacks where source code is mangled by transpilers and minifiers, LastStack maintains a 1-to-1 mapping that an AI agent can reason about without a complex, human-centric build pipeline.
+An **isomorphic codebase** means internal program representations (LLVM IR) are directly and verifiably preserved in the deployment artifact (WebAssembly). Unlike traditional web stacks where source code is mangled by transpilers and minifiers, Alien Stack maintains a 1-to-1 mapping that an AI agent can reason about without a complex, human-centric build pipeline.
 
 ### 2. AI-Native Development
 The stack is designed to be **read and written by machines**, prioritizing machine-checkable contracts over human legibility:

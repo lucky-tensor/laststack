@@ -1,6 +1,6 @@
 # Isomorphic UI Kit Demo
 
-This demo showcases a premium, interactive UI component library built under the strict constraints of the LastStack architecture.
+This demo showcases a premium, interactive UI component library built under the strict constraints of the Alien Stack architecture.
 
 ## Mission & Objective
 

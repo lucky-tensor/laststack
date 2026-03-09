@@ -4,9 +4,9 @@
 
 ## Abstract
 
-This paper extends the LastStack server-side architecture (see `docs/alien-stack-whitepaper.md`, v1.2) to client execution environments. It introduces a **isomorphic client architecture** in which all application policy, layout, and state reside in AI-generated WebAssembly modules, and the browser is treated as a minimal host substrate—a window-system microkernel. The primary objective is to **completely replace high-level JS frameworks (React, Vue) and CSS frameworks (Bootstrap, Tailwind)** with agent-optimized, proof-carrying IR, achieving extreme tree-shaking for the browser runtime. This document applies the same empirical, evidence-first methodology and conformance-level model as the server-side specification: claims are grounded in observable repository state, conformance levels are measurement-based rather than aspirational, and hypotheses are falsifiable.
+This paper extends the Alien Stack server-side architecture (see `docs/alien-stack-whitepaper.md`, v1.2) to client execution environments. It introduces a **isomorphic client architecture** in which all application policy, layout, and state reside in AI-generated WebAssembly modules, and the browser is treated as a minimal host substrate—a window-system microkernel. The primary objective is to **completely replace high-level JS frameworks (React, Vue) and CSS frameworks (Bootstrap, Tailwind)** with agent-optimized, proof-carrying IR, achieving extreme tree-shaking for the browser runtime. This document applies the same empirical, evidence-first methodology and conformance-level model as the server-side specification: claims are grounded in observable repository state, conformance levels are measurement-based rather than aspirational, and hypotheses are falsifiable.
 
-The client architecture is a direct extension of the LastStack thesis:
+The client architecture is a direct extension of the Alien Stack thesis:
 
 > Canonical behavior is LLVM IR. Contracts are machine obligations. Release is gate-driven.
 
@@ -32,7 +32,7 @@ This paper does not claim client implementation exists. It specifies what a conf
 
 ## 2. Extended Thesis
 
-The server-side LastStack thesis has four non-negotiable constraints (reproduced from v1.2):
+The server-side Alien Stack thesis has four non-negotiable constraints (reproduced from v1.2):
 
 1. Canonical behavior is LLVM IR.
 2. Agent interface is text plus structure.
@@ -47,7 +47,7 @@ The client architecture adds one constraint and refines two:
 The refinements:
 
 - **Constraint 1 (refined):** On the client, canonical behavior is **Wasm** (binary or WAT). LLVM IR remains an optional, recommended intermediate for optimization passes and formal verification.
-- **Constraint 3 (refined):** Client-exported PCF contracts apply to Wasm-exported functions, not only to server IR symbols. The same `laststack.pcf.v1` schema governs both.
+- **Constraint 3 (refined):** Client-exported PCF contracts apply to Wasm-exported functions, not only to server IR symbols. The same `alien-stack.pcf.v1` schema governs both.
 
 ---
 
@@ -122,7 +122,7 @@ sequenceDiagram
 
 The following ABI is the **complete and exclusive** interface between the Wasm module and the host. The shim must not expose additional operations outside this set without explicit versioned extension.
 
-**ABI version:** `laststack.client.abi.v1`
+**ABI version:** `alien-stack.client.abi.v1`
 
 | Syscall | Signature | Description |
 |---|---|---|
@@ -165,9 +165,9 @@ The same structural graph comment conventions defined in `docs/white-paper.md §
 
 ### 3.7 Contract Layer (Normative)
 
-Every Wasm-exported function must carry a PCF metadata block conforming to `laststack.pcf.v1` (as specified in the server-side whitepaper). Required fields:
+Every Wasm-exported function must carry a PCF metadata block conforming to `alien-stack.pcf.v1` (as specified in the server-side whitepaper). Required fields:
 
-- `pcf.schema`: `laststack.pcf.v1`
+- `pcf.schema`: `alien-stack.pcf.v1`
 - `pcf.pre`, `pcf.post`
 - `pcf.effects`: drawn from the canonical effect atom vocabulary
 - `pcf.bind`
@@ -189,11 +189,11 @@ Matching rule: `actual_effects ⊆ declared_effects`. Any unresolved atom is a r
 
 ### 3.8 Artifact Seal and TCB Capture
 
-Client release artifacts must emit a manifest conforming to `laststack.artifact.v1` (schema defined in the server-side whitepaper). Client-specific additions to the manifest:
+Client release artifacts must emit a manifest conforming to `alien-stack.artifact.v1` (schema defined in the server-side whitepaper). Client-specific additions to the manifest:
 
 - `wasm_digest`: SHA-256 of the deployed `.wasm` binary.
 - `shim_digest`: SHA-256 of the JS shim file.
-- `abi_version`: `laststack.client.abi.v1`
+- `abi_version`: `alien-stack.client.abi.v1`
 - `wat_source_digest`: SHA-256 of the WAT source (if WAT is the canonical source).
 
 TCB scope for client builds additionally includes:
@@ -205,7 +205,7 @@ TCB scope for client builds additionally includes:
 
 Client verification pipeline (fail-closed):
 
-1. Parse WAT/Wasm module; validate import list against `laststack.client.abi.v1` allowlist.
+1. Parse WAT/Wasm module; validate import list against `alien-stack.client.abi.v1` allowlist.
 2. Validate structural graph consistency in WAT annotations.
 3. Validate PCF completeness on exported functions (`init`, `on_event`, `on_frame`).
 4. Materialize and check obligations (`pre/post/effects/bind/proof`).
@@ -261,16 +261,16 @@ Conformance levels mirror the server-side ladder from `docs/white-paper.md §4`.
 | Level | Name | Criteria |
 |---|---|---|
 | **CL0** | Structural | WAT module has structural graph comments; `extract-graph` (or equivalent) parses and validates consistency. |
-| **CL1** | ABI-Compliant | Module imports only `laststack.client.abi.v1` syscalls; no framework dependencies; JS shim is ≤100 lines with no scheduler. |
+| **CL1** | ABI-Compliant | Module imports only `alien-stack.client.abi.v1` syscalls; no framework dependencies; JS shim is ≤100 lines with no scheduler. |
 | **CL2** | Contract Complete | All exported functions (`init`, `on_event`, `on_frame`) have full PCF metadata. |
 | **CL3** | Verified | Fail-closed verifier and link gate in build; verifier uncertainty policy enforced. |
-| **CL4** | Sealed | Artifact manifest (`laststack.artifact.v1`) emitted with Wasm, shim, and WAT digests; TCB recorded. |
+| **CL4** | Sealed | Artifact manifest (`alien-stack.artifact.v1`) emitted with Wasm, shim, and WAT digests; TCB recorded. |
 
 A system claims only the highest level whose criteria are fully met.
 
 Current repository state: **CL1 (ABI-Compliant)** met by `demo/ui-kit`.
 - CL0 (Structural) met: Wasm/IR source exists.
-- CL1 (ABI-Compliant) met: Imports `laststack.client.abi.v1`, shim is <50 lines inlined in `index.html`.
+- CL1 (ABI-Compliant) met: Imports `alien-stack.client.abi.v1`, shim is <50 lines inlined in `index.html`.
 - CL2 (Contract Complete) not yet met: IR source (`button.ll`) lacks full PCF metadata blocks.
 
 ---
@@ -302,8 +302,8 @@ Data collection protocol for each hypothesis: define sampling window (minimum 10
 
 This paper is a strict extension of `docs/white-paper.md` v1.2, not a replacement. The two specifications share:
 
-- **PCF schema:** `laststack.pcf.v1` governs both server IR exports and client Wasm exports.
-- **Artifact seal:** `laststack.artifact.v1` governs both server and client release manifests; client adds `wasm_digest`, `shim_digest`, and `abi_version` fields.
+- **PCF schema:** `alien-stack.pcf.v1` governs both server IR exports and client Wasm exports.
+- **Artifact seal:** `alien-stack.artifact.v1` governs both server and client release manifests; client adds `wasm_digest`, `shim_digest`, and `abi_version` fields.
 - **Structural graph conventions:** identical tag vocabulary, parser, and consistency rules.
 - **Verifier uncertainty policy:** identical `valid/invalid/unknown` table.
 - **Conformance-level model:** client L0–L4 mirrors server L0–L4; both are measurement-based.
@@ -319,7 +319,7 @@ A unified build could compile from a single LLVM IR source to both a server bina
 At baseline `d003557` (March 8, 2026):
 
 - **Meets**: CL0 (Structural) and CL1 (ABI-Compliant). Functional UI Kit demo in `demo/ui-kit` uses only the defined ABI and an inlined shim.
-- **Partially meets**: PCF schema (`laststack.pcf.v1`) and artifact seal (`laststack.artifact.v1`) infrastructure from the server side can be reused directly.
+- **Partially meets**: PCF schema (`alien-stack.pcf.v1`) and artifact seal (`alien-stack.artifact.v1`) infrastructure from the server side can be reused directly.
 - **Does not meet**: CL2 through CL4 (contract verification and sealing).
 
 This is an implementation maturity statement. The specification is ready; the implementation does not yet exist.
@@ -328,13 +328,13 @@ This is an implementation maturity statement. The specification is ready; the im
 
 ## 10. Definition of Done (Client)
 
-A LastStack-compliant client release must satisfy all of:
+A Alien Stack-compliant client release must satisfy all of:
 
 - WAT or Wasm module with structural graph annotations, parseable by `extract-graph` or equivalent.
-- Module imports only from `laststack.client.abi.v1`; JS shim ≤100 lines, no scheduler.
+- Module imports only from `alien-stack.client.abi.v1`; JS shim ≤100 lines, no scheduler.
 - Full PCF coverage on all exported functions.
 - Fail-closed verifier and link gate pass in build path.
-- Artifact manifest (`laststack.artifact.v1`) emitted with `wasm_digest`, `shim_digest`, `abi_version`, and TCB records.
+- Artifact manifest (`alien-stack.artifact.v1`) emitted with `wasm_digest`, `shim_digest`, `abi_version`, and TCB records.
 - CI benchmark and hypothesis evidence archived and reproducible.
 
 This specification keeps everything working from the server-side architecture (PCF, artifact seal, structural graph, verifier policy) and adds only what is specific to the client: a normative ABI, Wasm module requirements, and a client-specific conformance ladder.
@@ -343,10 +343,10 @@ This specification keeps everything working from the server-side architecture (P
 
 ## Appendix A: Reference Shim Implementation
 
-This appendix provides a **normative reference implementation** of the browser shim conforming to `laststack.client.abi.v1`. The implementation is 43 lines and satisfies all constraints from §3.2–§3.5.
+This appendix provides a **normative reference implementation** of the browser shim conforming to `alien-stack.client.abi.v1`. The implementation is 43 lines and satisfies all constraints from §3.2–§3.5.
 
 ```javascript
-// laststack.client.abi.v1 shim
+// alien-stack.client.abi.v1 shim
 // Reference implementation - §A
 
 const handles = new Map();

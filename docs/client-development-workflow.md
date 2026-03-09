@@ -1,4 +1,4 @@
-# LastStack Client Development Workflow
+# Alien Stack Client Development Workflow
 
 This document defines the development workflow for building a pure Wasm CSS engine that matches Tailwind CSS pixel-perfect - without using Tailwind.
 
@@ -150,7 +150,7 @@ The development HTML (`index.html`) must NOT include Tailwind:
 <html>
 <head>
     <meta charset="UTF-8">
-    <title>LastStack UI</title>
+    <title>Alien Stack UI</title>
     <!-- NO Tailwind! -->
 </head>
 <body id="root">

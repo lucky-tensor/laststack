@@ -48,4 +48,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ui-kit-capture
-          path: /tmp/laststack-captures/ci-capture/
+          path: /tmp/alien-stack-captures/ci-capture/
