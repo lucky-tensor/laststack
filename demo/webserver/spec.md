@@ -1,5 +1,11 @@
 # Webserver Demo Spec
 
+## Claim
+
+Agents can build a complete, working web stack — native TCP server, static file serving, WASM fractal renderer, browser client — authored entirely in LLVM IR, without frameworks, high-level languages, or hand-written build configuration. The browser-facing JS shim is under 50 lines and provides only raw DOM syscalls; all application logic is in the WASM module compiled from IR.
+
+This demo reaches **L1 conformance**: PCF metadata is attached to all gated functions and `verify.sh` / `link-gate.sh` check structural completeness and consistency. Proof discharge is not solver-backed — that is the role of the storage demo.
+
 ## Goal
 
 Demonstrate a pure-LLVM web stack for Alien Stack:

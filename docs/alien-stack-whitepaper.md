@@ -396,33 +396,74 @@ TCB scope: LLVM toolchain components, verifier/checker binaries, linker/sealing 
 
 A system may claim only the highest level whose criteria are **fully met**:
 
-| Level | Name | Criteria |
-|-------|------|----------|
-| **L0** | Structural | Graph comments parse and pass consistency checks. |
-| **L1** | Contract Complete | Required functions have full PCF metadata (`pre/post/effects/bind/proof`). |
-| **L2** | Verified | Solver/checker-backed verification is fail-closed in the build. |
-| **L3** | Linked and Sealed | Link gate enforced, artifact manifest emitted with TCB capture. |
-| **L4** | Durable | IPS recovery protocol implemented and validated under crash/fault injection. |
+| Level | Name | Criteria | Demo reaching this level |
+|-------|------|----------|--------------------------|
+| **L0** | Structural | Graph comments parse and pass consistency checks. | all demos |
+| **L1** | Contract Complete | Required functions have full PCF metadata (`pre/post/effects/bind/proof`). | webserver, plaintext, ui-kit |
+| **L2** | Verified | Solver/checker-backed verification is fail-closed in the build. | **storage** |
+| **L3** | Linked and Sealed | Link gate enforced, artifact manifest emitted with TCB capture. | future work |
+| **L4** | Durable | IPS recovery protocol implemented and validated under crash/fault injection. | future work |
+
+The storage demo reaches L2: Z3 discharges SMT-LIB proof obligations and structural effect lint validates declared vs. actual syscall sets, both fail-closed. The webserver and plaintext demos reach L1: PCF metadata is complete and structurally checked, but proof discharge is not solver-backed. L3 and L4 are specified but not yet implemented.
 
 ---
 
-## 7. Demo: HTTP Server in LLVM IR
+## 7. Demonstrations
 
-This repository demonstrates practical viability of the architecture:
+The repository contains four proof-of-concept demos. Each is scoped to prove one specific claim about the architecture. They are not production software.
 
-- **`demo/webserver/server.ll`** — A native HTTP server authored entirely in LLVM IR with PCF metadata and structural graph annotations. Listens on TCP, accepts connections, responds with static HTML, enforces response invariants.
-- **`demo/webserver/fractal.ll`** — A WASM fractal module authored in LLVM IR.
-- **`demo/webserver/build.sh`** — Compilation pipeline: IR → native binary (+ WASM path).
-- **`demo/webserver/verify.sh`** — Extracts and checks SMT invariants from metadata.
+### Demo coverage
 
-### 7.1 Invariants Demonstrated
+| Demo | Conformance level reached | Claim |
+|------|:-------------------------:|-------|
+| `demo/webserver` | L1 | Agents can build a complete web stack (native server + WASM client) directly in LLVM IR |
+| `demo/plaintext` | L1 | An IR-authored server is performance-competitive with a naive Rust baseline at low-to-medium concurrency |
+| **`demo/storage`** | **L2** | **PCF contracts are formally verifiable: Z3 discharges SMT-LIB obligations; effect lint validates declared vs. actual syscall sets; IPS invariants hold under crash and recovery** |
+| `demo/ui-kit` | L1 | All UI policy and CSS generation can reside in a WASM module with a <50-line JS shim |
 
-| Invariant | Encoding | Enforcement |
-|-----------|----------|-------------|
-| Response body is never null | `!pcf.post` metadata | Static (provable from IR) |
-| Status code ∈ {200} | `!pcf.post` metadata | Static (constant propagation) |
-| Content-Length = len(body) | `!ips.inv` metadata | Runtime check in accessor |
-| Socket fd ≥ 0 after bind | `!pcf.post` metadata | Runtime check (depends on OS) |
+### 7.1 Webserver Demo (`demo/webserver`)
+
+**Claim:** The full execution surface — TCP server, static file serving, WASM fractal renderer, browser client — can be authored entirely in LLVM IR without frameworks or high-level languages.
+
+Key files:
+- **`server.ll`** — Native HTTP server with PCF metadata and structural graph annotations. Prebuilds HTTP responses at startup; enforces response invariants via `!pcf.post`.
+- **`fractal.ll`** — WASM fractal module authored in LLVM IR, rendered in-browser with a minimal JS shim.
+- **`verify.sh`** / **`link-gate.sh`** — Check PCF metadata presence and structural consistency. (Metadata completeness; not solver-backed discharge.)
+
+### 7.2 Plaintext Benchmark Demo (`demo/plaintext`)
+
+**Claim:** An LLVM IR server authored by an agent, without hand-tuning, matches or exceeds a naive Rust Hyper `current-thread` server at low-to-medium concurrency (c=256 to c=4096).
+
+At saturation (c=16384) the IR server loses to Hyper — disclosed and expected, because it uses a single-threaded accept loop. Both implementations are agent first-pass; no hand-tuning was applied to either. Benchmarks are automated in CI.
+
+### 7.3 Storage Demo — Verification Anchor (`demo/storage`)
+
+**Claim:** PCF contracts and IPS invariants are formally verifiable today, using existing tools (Z3, grep, shell).
+
+This is the deepest verification in the repository. The build pipeline runs three independent gates, all fail-closed:
+
+1. **`ips-evidence.sh`** — Seven behavioral checks against the compiled binary, including a negative-path test: a deliberately corrupted (uncommitted) header must cause `recover` to exit non-zero.
+
+2. **`verify-pcf.sh`** — Invokes Z3 on two SMT-LIB obligation files:
+   - `checksum-z3.smt2`: proves the `checksum_for` IR implementation matches its PCF postcondition.
+   - `roundtrip-z3.smt2`: proves write→read accepts committed state and always rejects uncommitted state.
+   All `check-sat` calls must return `unsat`. Any `sat` or `unknown` is a build failure.
+
+3. **`effect-lint.sh`** — Parses `ips.ll`, extracts actual external call targets from each function body, maps them to effect atoms (`libc.pwrite`, `libc.fsync`, etc.), and compares against the function's `!pcf.effects` declaration. Under-declaration is a hard error; over-declaration is a warning.
+
+| Invariant | Encoding | Enforcement mechanism |
+|-----------|----------|-----------------------|
+| `checksum_for` result matches postcondition | `!pcf.post` + `checksum-z3.smt2` | Z3 solver discharge (`unsat`) |
+| Write→read roundtrip accepts committed state | `roundtrip-z3.smt2` | Z3 solver discharge (`unsat`) |
+| Uncommitted state always rejected | `roundtrip-z3.smt2` | Z3 solver discharge (`unsat`) |
+| Declared effects ⊇ actual syscalls | `!pcf.effects` + `effect-lint.sh` | Structural IR parse, fail-closed |
+| Corrupt header causes recovery failure | `ips-evidence.sh` (check 7) | Behavioral negative-path test |
+
+### 7.4 UI Kit Demo (`demo/ui-kit`)
+
+**Claim:** The browser can be treated as a minimal host substrate. All UI policy, interaction state, and CSS generation reside in a WASM module compiled from LLVM IR; the browser-facing interface is a <50-line JS device-driver shim.
+
+Renders interactive components (button, card, input) with hover and focus states. The WASM module dynamically injects raw CSS strings into the DOM at initialization. No React, Vue, Svelte, Bootstrap, or Tailwind. Validates one interactive component; not a complete component library.
 
 ---
 

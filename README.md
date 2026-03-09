@@ -59,10 +59,28 @@ Long term, we're curious whether there is a graph representation of the code whi
 
 ## Demos
 
-This repository contains four primary demos verifying the architecture. You will need an LLVM toolchain (clang, llc, wasm-ld) and standard POSIX tools to build them.
+Each demo is scoped to prove one specific architectural claim. They are not production software — they exist to show that the core ideas are technically coherent and implementable at small scale.
+
+### Verification coverage
+
+| Demo | Claim being proved | Behavioral checks | Effect lint | Z3 solver discharge |
+|------|--------------------|:-----------------:|:-----------:|:-------------------:|
+| webserver | Agents can build a full web stack (server + WASM client) directly in LLVM IR | ✓ | — | — |
+| plaintext | IR-authored servers are performance-competitive with hand-written Rust at low-to-medium concurrency | ✓ | — | — |
+| **storage** | **PCF contracts and IPS invariants can be formally verified — Z3 discharges SMT-LIB proof obligations, effect lint enforces declared vs. actual syscall sets** | **✓** | **✓** | **✓** |
+| ui-kit | All UI policy and styling can reside in a WASM module compiled from IR, with a <50-line JS shim | ✓ | — | — |
+
+The storage demo is the verification anchor for the architecture. The other demos establish that the stack is buildable across the full execution surface (server, WASM client, durable storage, browser UI).
+
+You will need an LLVM toolchain (clang, llc, wasm-ld) and standard POSIX tools to build them. Z3 is required for the storage demo's solver discharge step.
+
+---
 
 ### 1. E2E Webserver (`demo/webserver`)
-A full LLVM IR HTTP server coupled with a WASM fractal-rendering client. Demonstrates the viability of building end-to-end web experiences without frameworks or high-level languages, relying purely on IR-level proofs and WASM sandbox safety. 
+
+**Claim:** Agents can build a complete, working web stack — native HTTP server plus browser-side WASM module — directly in LLVM IR, without frameworks or high-level languages.
+
+A full LLVM IR HTTP server coupled with a WASM fractal-rendering client. The server prebuilds HTTP responses at startup; the fractal module compiles LLVM IR to WASM and renders in the browser with a minimal JS shim. PCF metadata is attached to all gated functions; `verify.sh` and `link-gate.sh` check metadata presence and structural consistency.
 *(See: [spec.md](demo/webserver/spec.md))*
 
 **To build and run:**
@@ -74,8 +92,13 @@ cd demo/webserver
 ```
 ![Fractal output](docs/fractal-demo.png)
 
+---
+
 ### 2. TechEmpower Plaintext Benchmark (`demo/plaintext`)
-A naive LLVM IR HTTP server specifically tailored to the TechEmpower FrameworkBenchmarks (TFB) `plaintext` test. It is benchmarked directly against a naive Rust Hyper `current-thread` server.
+
+**Claim:** An LLVM IR server authored by an agent, without hand-tuning, is performance-competitive with a naive Rust Hyper baseline at low-to-medium concurrency.
+
+A minimal single-threaded HTTP server tailored to the TechEmpower FrameworkBenchmarks `plaintext` profile — no heap allocations, one shared response buffer. Benchmarked head-to-head against a Rust Hyper `current-thread` server (also an agent's first pass, no hand-tuning). PCF metadata is present; verification checks structural completeness.
 *(See: [spec.md](demo/plaintext/spec.md))*
 
 **To build and run:**
@@ -85,8 +108,17 @@ cd demo/plaintext
 ./run.sh
 ```
 
-### 3. IPS Durability and Recovery (`demo/storage`)
-Demonstrates Invariant-Preserving Structures (IPS) living in a memory-mapped durable heap, with crash recovery and validation.
+---
+
+### 3. IPS Durability, Recovery, and Formal Verification (`demo/storage`)
+
+**Claim:** PCF contracts are formally verifiable — Z3 can discharge SMT-LIB proof obligations derived from IR-level postconditions. Effect declarations can be mechanically validated against actual IR call targets. IPS invariants hold across crash and recovery.
+
+This is the verification anchor of the repository. The build pipeline runs three independent gates:
+1. **`ips-evidence.sh`** — seven behavioral checks including a negative-path test (corrupt state must fail recovery).
+2. **`verify-pcf.sh`** — invokes Z3 on two SMT-LIB files (`checksum-z3.smt2`, `roundtrip-z3.smt2`); all `check-sat` results must be `unsat`.
+3. **`effect-lint.sh`** — parses `ips.ll`, extracts actual external call targets per function, maps them to effect atoms, and fails closed if any observed effect is absent from the function's `!pcf.effects` declaration.
+
 *(See: [spec.md](demo/storage/spec.md))*
 
 **To build and run:**
@@ -96,9 +128,14 @@ cd demo/storage
 ./run.sh
 ```
 
+---
+
 ### 4. Isomorphic UI Kit (`demo/ui-kit`)
-A demonstration of UI component rendering without JS or CSS frameworks. All logic and styling reside in a Wasm module compiled from LLVM IR, with a minimal (<50 line) JS shim providing raw DOM syscalls. The demo renders a single interactive component; the intent is to validate the architecture, not to deliver a complete component library.
-*(See: [README.md](demo/ui-kit/README.md))*
+
+**Claim:** All UI policy, interaction state, and CSS generation can reside in a WASM module compiled from LLVM IR. The browser-facing interface can be reduced to a <50-line JS device-driver shim.
+
+Renders interactive components (button, card, input) with hover and focus states. The WASM module dynamically injects raw CSS strings into the DOM at initialization. No React, Vue, Svelte, Bootstrap, or Tailwind. The demo validates one interactive component; it is not a complete component library.
+*(See: [spec.md](demo/ui-kit/spec.md))*
 
 **To build and run:**
 ```bash
@@ -111,7 +148,9 @@ cd demo/ui-kit
 
 ## Plaintext Benchmark Results
 
-Automated CI benchmark reflecting the TFB plaintext profile (`wrk`, shared GitHub Actions runner, 4 threads, 15s per level). The LLVM IR server outperforms the Rust Hyper baseline at low-to-medium concurrency. At saturation (c=16384), Hyper's async runtime holds better — expected, given the IR server uses a single-threaded accept loop.
+These results support the plaintext demo's specific claim: an agent-authored LLVM IR server is performance-competitive with a naive Rust Hyper baseline at low-to-medium concurrency. The IR server loses at saturation (c=16384) — expected and disclosed, because it uses a single-threaded accept loop. Hyper's async runtime is built for that regime.
+
+Automated CI benchmark reflecting the TFB plaintext profile (`wrk`, shared GitHub Actions runner, 4 threads, 15s per level).
 
 *(Both implementations represent an agent's first pass. No hand-tuning was applied to either.)*
 

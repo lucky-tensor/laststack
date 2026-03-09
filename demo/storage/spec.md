@@ -1,11 +1,22 @@
 # Storage Demo Spec
 
-## Goal
+## Claim
 
-Demonstrate the Alien Stack storage path as LLVM IR with deterministic evidence:
-- checksum-validated durable header format,
-- two-phase commit marker,
-- recovery checks that reject invalid or uncommitted state.
+This demo is the **verification anchor** of the Alien Stack repository. It proves that PCF contracts are formally verifiable using existing tools — Z3 discharges SMT-LIB proof obligations derived from IR-level postconditions, structural effect lint mechanically validates declared vs. actual syscall sets, and IPS invariants hold across crash and recovery. This is the only demo that reaches L2 conformance.
+
+## What is being proved
+
+Three independent claims, each with a distinct gate:
+
+1. **Solver-backed proof discharge is real.** Z3 is invoked on SMT-LIB obligations derived from IR postconditions. All `check-sat` calls must return `unsat` — the build fails closed otherwise.
+2. **Effect declarations are mechanically enforced.** `effect-lint.sh` parses `ips.ll`, extracts actual external call targets per function, and errors if any observed syscall is absent from the function's `!pcf.effects` declaration.
+3. **IPS invariants hold under crash.** A deliberately corrupted (uncommitted) header must cause `recover` to fail — not silently succeed.
+
+## Specific behavioral properties demonstrated
+
+- Checksum-validated durable header format.
+- Two-phase commit marker (staged write → committed write).
+- Recovery rejects invalid or uncommitted state.
 
 ## Source of Truth
 

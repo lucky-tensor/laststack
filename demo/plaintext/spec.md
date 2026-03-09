@@ -1,5 +1,11 @@
 # Plaintext Demo Specification
 
+## Claim
+
+An LLVM IR HTTP server authored by an agent — without hand-tuning, without frameworks, without a standard library — is performance-competitive with a naive Rust Hyper `current-thread` server at low-to-medium concurrency (c=256 to c=4096). At saturation (c=16384) the IR server loses; this is expected and disclosed — it uses a single-threaded accept loop, and Hyper's async runtime is built for that regime. Both implementations are agent first-pass; no hand-tuning was applied to either.
+
+This demo reaches **L1 conformance**: PCF metadata is present and structurally checked. Proof discharge is not solver-backed — that is the role of the storage demo.
+
 ## Goal
 Deliver a handwritten LLVM IR HTTP server that satisfies the TechEmpower FrameworkBenchmarks `plaintext` test. The server must respond to `GET /plaintext` (and any path) with `200 OK`, a `Content-Type: text/plain` header, and the constant body `Hello, World!` without heap allocations or standard library abstractions.
 
