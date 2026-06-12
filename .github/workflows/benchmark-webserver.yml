@@ -91,6 +91,54 @@ jobs:
           summarize k6-single.json "single"
           summarize k6-steady.json "steady_state"
 
+      - name: Publish results to job summary
+        if: always()
+        working-directory: demo/webserver
+        run: |
+          {
+            echo "## Webserver k6 benchmark results"
+            echo ""
+            echo "| Scenario | RPS | p95 latency | Checks passed | Checks failed |"
+            echo "| --- | --- | --- | --- | --- |"
+            for f in k6-single.json k6-steady.json; do
+              [ -f "$f" ] || continue
+              jq -r --arg name "$f" '"| \($name) | \(.metrics.http_reqs.rate // 0 | floor) | \(.metrics.http_req_duration["p(95)"] // 0) | \(.metrics.checks.passes // 0) | \(.metrics.checks.fails // 0) |"' "$f"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce regression gate
+        working-directory: demo/webserver
+        env:
+          # Sanity floors — catch catastrophic regressions, not runner noise.
+          MIN_SINGLE_RPS: "200"
+          MIN_STEADY_RPS: "2000"
+          MAX_CHECK_FAIL_RATIO: "0.01"
+        run: |
+          status=0
+          gate() {
+            local file=$1 min_rps=$2
+            local rps passes fails total
+            rps=$(jq '.metrics.http_reqs.rate // 0 | floor' "$file")
+            passes=$(jq '.metrics.checks.passes // 0' "$file")
+            fails=$(jq '.metrics.checks.fails // 0' "$file")
+            total=$((passes + fails))
+            if [ "$rps" -lt "$min_rps" ]; then
+              echo "FAIL: $file rps=$rps below floor $min_rps"; status=1
+            else
+              echo "OK:   $file rps=$rps (floor $min_rps)"
+            fi
+            if [ "$total" -gt 0 ]; then
+              if awk -v f="$fails" -v t="$total" -v m="$MAX_CHECK_FAIL_RATIO" 'BEGIN { exit !(f/t > m) }'; then
+                echo "FAIL: $file check failures $fails/$total exceed ratio $MAX_CHECK_FAIL_RATIO"; status=1
+              else
+                echo "OK:   $file check failures $fails/$total within ratio $MAX_CHECK_FAIL_RATIO"
+              fi
+            fi
+          }
+          gate k6-single.json "$MIN_SINGLE_RPS"
+          gate k6-steady.json "$MIN_STEADY_RPS"
+          exit $status
+
       - name: Upload k6 summary
         if: always()
         uses: actions/upload-artifact@v4

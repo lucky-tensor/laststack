@@ -57,7 +57,10 @@ echo "[Storage Build]   ✓ IPS report: $SCRIPT_DIR/ips-report.json"
 
 echo ""
 echo "[Storage Build] Step 3: PCF solver discharge (Z3)..."
-bash verify-pcf.sh pcf-proof-report.json || true
+bash verify-pcf.sh pcf-proof-report.json || {
+    echo "[Storage Build] ✗ PCF solver discharge failed"
+    exit 1
+}
 echo "[Storage Build]   ✓ PCF proof report: $SCRIPT_DIR/pcf-proof-report.json"
 
 echo ""

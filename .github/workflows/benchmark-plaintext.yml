@@ -49,6 +49,41 @@ jobs:
             cat "$file"
           done
 
+      - name: Publish results to job summary
+        working-directory: demo/plaintext/artifacts
+        run: |
+          {
+            echo "## Plaintext benchmark results"
+            for file in *.csv; do
+              echo ""
+              echo "### $file"
+              echo ""
+              echo "| Label | Concurrency | Requests/sec | Avg latency |"
+              echo "| --- | --- | --- | --- |"
+              awk -F, 'NR>1 {printf "| %s | %s | %s | %s |\n", $1, $2, $3, $4}' "$file"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce throughput floor (regression gate)
+        working-directory: demo/plaintext/artifacts
+        env:
+          # Conservative sanity floor — IR server sustains well above this on
+          # ubuntu-latest runners. Catches catastrophic regressions, not noise.
+          MIN_RPS: "5000"
+        run: |
+          status=0
+          while IFS=, read -r label conc rps latency; do
+            [ "$label" = "label" ] && continue
+            rps_int=${rps%.*}
+            if [ "${rps_int:-0}" -lt "$MIN_RPS" ]; then
+              echo "FAIL: $label concurrency=$conc rps=$rps below floor $MIN_RPS"
+              status=1
+            else
+              echo "OK:   $label concurrency=$conc rps=$rps (floor $MIN_RPS)"
+            fi
+          done < llvmir-wrk.csv
+          exit $status
+
       - name: Upload benchmark results
         uses: actions/upload-artifact@v4
         with:

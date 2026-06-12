@@ -31,16 +31,28 @@ for candidate in z3 z3-4 z3-solver; do
 done
 
 if [ -z "$Z3" ]; then
-    echo "[verify-pcf] WARNING: z3 not found; skipping solver discharge"
-    echo "[verify-pcf] Install Z3 (brew install z3 / apt install z3) to enable proof discharge"
-    cat > "$REPORT_JSON" <<EOF
+    if [ "${ALLOW_MISSING_Z3:-0}" = "1" ]; then
+        echo "[verify-pcf] WARNING: z3 not found; skipping solver discharge (ALLOW_MISSING_Z3=1)"
+        echo "[verify-pcf] Install Z3 (brew install z3 / apt install z3) to enable proof discharge"
+        cat > "$REPORT_JSON" <<EOF
 {
   "status": "skipped",
+  "reason": "z3 not found in PATH (ALLOW_MISSING_Z3=1)",
+  "proofs": []
+}
+EOF
+        exit 0
+    fi
+    echo "[verify-pcf] FAIL: z3 not found in PATH — solver discharge is required"
+    echo "[verify-pcf] Install Z3 (brew install z3 / apt install z3), or set ALLOW_MISSING_Z3=1 to explicitly skip"
+    cat > "$REPORT_JSON" <<EOF
+{
+  "status": "fail",
   "reason": "z3 not found in PATH",
   "proofs": []
 }
 EOF
-    exit 0
+    exit 1
 fi
 
 Z3_VERSION="$("$Z3" --version 2>/dev/null || echo "unknown")"
@@ -54,11 +66,13 @@ declare -a PROOF_DESCS
 PROOFS=(
     "checksum-z3.smt2"
     "roundtrip-z3.smt2"
+    "epoch-z3.smt2"
 )
 
 PROOF_DESCS=(
     "checksum_for: IR implementation matches PCF postcondition spec"
     "IPS round-trip (write->read accepts) and commit isolation (uncommitted always rejected)"
+    "epoch monotonicity: guarded increment never wraps; guard covers the only wrap case"
 )
 
 # ---- discharge each proof --------------------------------------------------

@@ -2,73 +2,60 @@
 
 ## Claim
 
-The browser can be treated as a minimal host substrate. All UI policy, interaction state, and CSS generation can reside in a WebAssembly module compiled from LLVM IR. The browser-facing interface can be reduced to a <50-line JavaScript device-driver shim providing only raw DOM syscalls — no framework, no runtime scheduler, no static CSS delivery.
+The browser can be treated as a minimal host substrate. All UI policy, interaction state, and styling decisions can reside in a WebAssembly module compiled from LLVM IR. The browser-facing interface can be reduced to a <50-line JavaScript device-driver shim providing only raw DOM syscalls — no framework, no runtime scheduler, no static CSS delivery.
 
 This demo validates that architecture with one interactive component; it is not a complete component library. It reaches **L1 conformance**: the IR is structured and annotated per the Alien Stack convention. Proof discharge is not solver-backed — that is the role of the storage demo (`demo/storage`).
 
 ## What is being demonstrated
 
-1. **No JS frameworks**: React, Vue, Svelte, and equivalent runtimes are absent. All component logic runs inside Wasm.
-2. **No CSS frameworks**: Bootstrap, Tailwind, and static CSS files are absent. The Wasm module generates and injects raw CSS strings into the DOM at initialization.
-3. **Minimal host surface**: The JS shim is under 50 lines and contains no state management or scheduling — only syscall bindings (`dom_create`, `dom_set_attr`, `dom_listen`).
+1. **No JS frameworks**: React, Vue, Svelte, and equivalent runtimes are absent. All component logic and interaction state run inside Wasm (`@btn_handle`, `@clicked` live in linear memory).
+2. **No CSS frameworks**: Bootstrap, Tailwind, and static CSS files are absent. All styling is issued by the Wasm module at runtime as `dom_set_style` syscalls (inline style properties from constants in the IR). There is no CSS rule *generation engine* — composing rules from primitives is future work.
+3. **Minimal host surface**: The JS shim is under 50 lines and contains no state management or scheduling — only syscall bindings (`dom_create`, `dom_set_attr`, `dom_set_style`, `dom_listen`).
 
 ## Source of Truth
 
 | File | Purpose |
 |------|---------|
-| `ir/core.ll` | Syscall wrappers for DOM operations |
-| `ir/dom.ll` | DOM node creation and manipulation |
-| `ir/memory.ll` | String/buffer management in linear memory |
-| `ir/styles.ll` | CSS engine — style composition, rule generation, dynamic injection |
-| `ir/components.ll` | Component definitions (button, card, input) |
+| `ir/button.ll` | The button component: DOM construction, styling syscalls, click handling (`init`, `on_event`) |
 | `public/index.html` | Entry point — inlined JS shim + root mount point |
+| `verify.sh` | L1 gate — PCF metadata presence/shape checks on `ir/button.ll` |
 | `build.sh` | Compiles IR to `public/app.wasm` |
+| `scripts/test.ts` | Playwright acceptance test (render + click interaction) |
 
 ## Architecture
 
 ```
 ┌────────────────────────────────────────────┐
-│           styles.ll (CSS Engine)           │
-│  • Style composition functions             │
-│  • CSS rule generation from primitives     │
-│  • Dynamic injection into <style> tag      │
-└──────────────────────┬─────────────────────┘
-                       │
-                       ▼
-┌────────────────────────────────────────────┐
-│         components.ll (UI Logic)           │
-│  • Button: hover, active, focus states     │
-│  • Card: layout, padding, shadows          │
-│  • Input: two-way binding, focus states    │
-└──────────────────────┬─────────────────────┘
-                       │
-                       ▼
-┌────────────────────────────────────────────┐
-│      core.ll / dom.ll (Syscall Layer)      │
-│  • dom_create, dom_set_attr, dom_listen    │
+│         button.ll (UI Logic, wasm32)       │
+│  • init: style root, build button, listen  │
+│  • on_event: click → toggle state in       │
+│    linear memory → rewrite label/style     │
 └──────────────────────┬─────────────────────┘
                        │  Wasm import boundary
                        ▼
 ┌────────────────────────────────────────────┐
 │     Host shim — inlined in index.html      │
+│  dom_create / dom_append / dom_set_text /  │
+│  dom_set_attr / dom_set_style / dom_listen │
 │     ≤50 lines, no scheduler, no state      │
 └────────────────────────────────────────────┘
 ```
 
-**Key constraint:** The style engine composes CSS rules dynamically from primitives — it is not a hardcoded string repository. The Wasm module must be able to generate any class at runtime, not only pre-defined ones.
+**Scope note:** styling is applied as inline style properties via `dom_set_style`, with property names and values stored as constants in the IR. A CSS engine that composes arbitrary rules from primitives (`styles.ll`), and additional components (card, input — `components.ll`), are future work and intentionally absent.
 
 ## Constraints (Non-Negotiable)
 
-- All UI policy, layout logic, interaction state, and CSS generation must reside exclusively in the Wasm module compiled from `.ll` files.
+- All UI policy, layout logic, interaction state, and styling decisions must reside exclusively in the Wasm module compiled from `.ll` files.
 - The JS shim is limited to the `alien-stack.client.abi.v1` specification: DOM syscall bindings only, ≤50 lines, no runtime scheduling or state management.
 - No React, Vue, Svelte, or any other JS-based UI library.
-- No Tailwind, Bootstrap, or external static CSS. The Wasm module injects raw CSS into a `<style>` tag on boot.
+- No Tailwind, Bootstrap, or external static CSS. All styling is issued at runtime by the Wasm module via `dom_set_style` syscalls.
 
 ## Verification Requirements
 
 - **Build artifact**: IR must compile to `public/app.wasm` via `clang --target=wasm32`.
-- **Event handling**: All interactions route through shim → Wasm `on_event` → Wasm internal state → Wasm DOM mutation. No state lives in JS.
-- **CI gate**: `bun run test` must pass — Playwright assertions confirm expected components are present and visible on load.
+- **L1 metadata gate**: `./verify.sh` checks that every defined function in `ir/button.ll` carries the full `!pcf.*` metadata set (schema, toolchain, pre, post, proof, effects, bind).
+- **Event handling**: All interactions route through shim → Wasm `on_event` → Wasm internal state → Wasm DOM mutation. No state lives in JS. Playwright clicks the button and asserts the Wasm-driven label/style toggle.
+- **CI gate**: `bun run test` must pass — Playwright assertions confirm the component renders, is styled, and responds to clicks.
 
 ## Build and Run
 

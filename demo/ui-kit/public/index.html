@@ -36,6 +36,9 @@
                 if (key === 'value') handles.get(node).value = val;
                 else handles.get(node).setAttribute(key, val);
             },
+            dom_set_style: (node, k_p, k_l, v_p, v_l) => {
+                handles.get(node).style.setProperty(getStr(k_p, k_l), getStr(v_p, v_l));
+            },
             dom_listen: (node_handle, event_id) => {
                 const node = handles.get(node_handle);
                 node.addEventListener(events[event_id], () => wasmExports.on_event(node_handle, event_id));

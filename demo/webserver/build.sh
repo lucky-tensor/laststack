@@ -121,6 +121,15 @@ echo "[Webserver Build] Step 7: Running link gate..."
 bash link-gate.sh --verify-report verification-report.json --json link-gate-report.json
 echo "[Webserver Build]   ✓ Link gate report: $SCRIPT_DIR/link-gate-report.json"
 
+# Step 7b: Structural effect lint
+echo ""
+echo "[Webserver Build] Step 7b: Running structural effect lint..."
+bash ../../tools/effect-lint.sh server.ll effect-lint-report.json || {
+    echo "[Webserver Build] ✗ Effect lint failed — undeclared effects found"
+    exit 1
+}
+echo "[Webserver Build]   ✓ Effect lint report: $SCRIPT_DIR/effect-lint-report.json"
+
 # Step 8: Artifact seal + TCB capture
 echo ""
 echo "[Webserver Build] Step 8: Sealing artifacts..."

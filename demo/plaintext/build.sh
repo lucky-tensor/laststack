@@ -55,5 +55,13 @@ bash verify.sh --json verification-report.json
 bash link-gate.sh --verify-report verification-report.json --json link-gate-report.json
 
 echo
+echo "[Plaintext Build] Running structural effect lint..."
+bash ../../tools/effect-lint.sh plaintext.ll effect-lint-report.json || {
+    echo "[Plaintext Build] ✗ Effect lint failed — undeclared effects found"
+    exit 1
+}
+echo "[Plaintext Build]   ✓ Effect lint report: $SCRIPT_DIR/effect-lint-report.json"
+
+echo
 echo "[Plaintext Build] Build complete!"
 echo "[Plaintext Build] Binary size: $(binary_size alienstack-plaintext) bytes"

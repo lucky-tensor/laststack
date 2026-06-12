@@ -29,20 +29,7 @@ jobs:
       - name: Test Server Response
         working-directory: demo/webserver
         run: |
-          ./alienstack-server > server.log 2>&1 &
-          PID=$!
-          sleep 2
-          RESPONSE=$(curl -s http://127.0.0.1:9090/)
-          kill $PID
-          # The webserver returns an HTML page with title starting with "Alien Stack"
-          if [[ "$RESPONSE" == *"<title>Alien Stack"* ]]; then
-            echo "✓ UI Response matches expected output"
-          else
-            echo "✗ Unexpected response content"
-            echo "$RESPONSE" | head -n 20
-            cat server.log
-            exit 1
-          fi
+          bash webserver-evidence.sh --bin ./alienstack-server --json webserver-evidence-report.json
 
       - name: Upload Reports
         if: always()
@@ -52,4 +39,6 @@ jobs:
           path: |
             demo/webserver/verification-report.json
             demo/webserver/link-gate-report.json
+            demo/webserver/effect-lint-report.json
+            demo/webserver/webserver-evidence-report.json
             demo/webserver/artifacts/manifest.json
