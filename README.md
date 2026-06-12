@@ -1,8 +1,9 @@
 # Alien Stack
 
-![Plaintext](https://github.com/dot-matrix-labs/alien-stack/actions/workflows/demo-plaintext.yml/badge.svg)
-![Webserver](https://github.com/dot-matrix-labs/alien-stack/actions/workflows/demo-webserver.yml/badge.svg)
-![Storage](https://github.com/dot-matrix-labs/alien-stack/actions/workflows/demo-storage.yml/badge.svg)
+![Plaintext](https://github.com/superfield-ai/alien-stack/actions/workflows/demo-plaintext.yml/badge.svg)
+![Webserver](https://github.com/superfield-ai/alien-stack/actions/workflows/demo-webserver.yml/badge.svg)
+![Storage](https://github.com/superfield-ai/alien-stack/actions/workflows/demo-storage.yml/badge.svg)
+![UI Kit](https://github.com/superfield-ai/alien-stack/actions/workflows/ui-kit-test.yml/badge.svg)
 
 Alien Stack is an architecture for **agent-native software development**, described in detail in the [Alien Stack Whitepaper](docs/alien-stack-whitepaper.md). It's intentionally alien.
 
@@ -113,7 +114,7 @@ Each demo is scoped to prove one specific architectural claim. They are not prod
 
 The storage demo is the verification anchor for the architecture. The other demos establish that the stack is buildable across the full execution surface (server, WASM client, durable storage, browser UI).
 
-You will need an LLVM toolchain (clang, llc, wasm-ld) and standard POSIX tools to build them. Z3 is required for the storage demo's solver discharge step.
+You will need an LLVM toolchain (clang, llc, wasm-ld) and standard POSIX tools to build them. Z3 is required for the storage demo's solver discharge step. The native demos target `x86_64` Linux (they use POSIX syscalls such as `pread`/`pwrite`/`fork`); build them on Linux or in CI. The ui-kit demo targets `wasm32` and runs in any modern browser.
 
 ---
 
@@ -219,12 +220,13 @@ Automated CI benchmark reflecting the TFB plaintext profile (`wrk`, shared GitHu
 
 ## Verification and Automation
 
-Alien Stack enforces its contracts via **Verification and Link Gates**. In the demos (e.g., `demo/plaintext/build.sh`), compilation will **fail closed** if the required PCF metadata (`!pcf.pre`, `!pcf.effects`, etc.) is missing, invalid, or mismatches the code.
+Alien Stack enforces its contracts via **Verification and Link Gates**. In the demos (e.g., `demo/plaintext/build.sh`), compilation will **fail closed** if the required PCF metadata (`!pcf.pre`, `!pcf.effects`, etc.) is missing, invalid, or mismatches the code. The depth of the gates varies by demo: the storage demo additionally discharges SMT-LIB proof obligations with Z3 and runs a structural effect lint; the other demos currently enforce structural completeness of the metadata (conformance level L1 in the whitepaper's terms).
 
-CI jobs automatically track compliance and record latency snapshots (artifacts) to prevent regressions on steady-state and saturation loads.
+CI jobs run the verification gates on every push and pull request, and nightly benchmark jobs record latency snapshots as artifacts.
 
 ---
 
 ## Further Reading
 
 - [Alien Stack Whitepaper](docs/alien-stack-whitepaper.md) (The core architecture)
+- [Isomorphic Web Whitepaper](docs/isomorphic-web-whitepaper.md) (The client-side architecture — validated by the `demo/ui-kit` demo)

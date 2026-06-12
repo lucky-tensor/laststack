@@ -61,6 +61,38 @@ try {
     } else {
       fail('Button is not visible');
     }
+
+    // Styles must actually apply (dom_set_style, not inert attributes)
+    const bg = await button.evaluate(el => getComputedStyle(el).backgroundColor);
+    if (bg === 'rgb(37, 99, 235)') {
+      pass('Button background-color is #2563eb');
+    } else {
+      fail(`Button background-color is "${bg}" — expected rgb(37, 99, 235)`);
+    }
+
+    // Interaction: click routes shim -> Wasm on_event -> Wasm state -> DOM
+    await button.click();
+    const clickedText = await button.textContent();
+    if (clickedText?.trim() === 'Clicked!') {
+      pass('Click toggles label to "Clicked!"');
+    } else {
+      fail(`After click, label is "${clickedText?.trim()}" — expected "Clicked!"`);
+    }
+    const clickedBg = await button.evaluate(el => getComputedStyle(el).backgroundColor);
+    if (clickedBg === 'rgb(22, 163, 74)') {
+      pass('Click toggles background to #16a34a');
+    } else {
+      fail(`After click, background is "${clickedBg}" — expected rgb(22, 163, 74)`);
+    }
+
+    // Second click toggles back
+    await button.click();
+    const revertText = await button.textContent();
+    if (revertText?.trim() === 'Submit') {
+      pass('Second click toggles label back to "Submit"');
+    } else {
+      fail(`After second click, label is "${revertText?.trim()}" — expected "Submit"`);
+    }
   }
 
   if (consoleErrors.length > 0) {

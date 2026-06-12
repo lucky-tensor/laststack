@@ -95,7 +95,11 @@ target triple = "x86_64-pc-linux-gnu"
 @content_type_wasm = private unnamed_addr constant [33 x i8] c"Content-Type: application/wasm\0D\0A\00"
 
 ; @global request parser strings
-@req_fractal = private unnamed_addr constant [18 x i8] c"GET /fractal.wasm\00"
+; @sum  Anchored request-line prefixes: matched only at the start of @req_buf
+;       (pointer equality with strstr result), so ".wasm" substrings elsewhere
+;       in the request can never select the WASM route.
+@req_fractal_http = private unnamed_addr constant [23 x i8] c"GET /fractal.wasm HTTP\00"
+@req_index_http   = private unnamed_addr constant [11 x i8] c"GET / HTTP\00"
 
 ; @global header/response templates
 @fmt_header_200 = private unnamed_addr constant [62 x i8] c"HTTP/1.1 200 OK\0D\0A%sContent-Length: %ld\0D\0AConnection: close\0D\0A\0D\0A\00"
@@ -428,18 +432,22 @@ asset_fail:
 
 ; ============================================================================
 ; @fn        @handle_client
-; @sum       Read one HTTP request, route to a prebuilt response (HTML, WASM, or 404), write to fd, close.
+; @sum       Read one HTTP request, route the request line to a prebuilt response (HTML, WASM, or 404), write to fd, close.
 ; @layer     hot-path
 ; @called-by @main
 ; @calls     @read, @write, @close, @strstr
-; @reads     @req_fractal, @html_resp, @html_resp_len, @wasm_resp, @wasm_resp_len, @response_404, @response_404_len
+; @reads     @req_fractal_http, @req_index_http, @html_resp, @html_resp_len, @wasm_resp, @wasm_resp_len, @response_404, @response_404_len
 ; @writes    @req_buf
 ; @emits     sys:io, sys:fs
-; @cfg       entry → parse_request → serve_wasm | serve_html | entry → serve_404
+; @cfg       entry → parse_request → serve_wasm | check_index → serve_html | serve_404; entry → serve_404
 ; @pre       client_fd >= 0; @load_assets has returned 0
 ; @post      one complete HTTP response written to client_fd; client_fd closed
 ; @inv       client_fd is closed on every exit path (serve_wasm, serve_html, serve_404)
-; @proof     case-analysis: all three serve paths call @close before ret. QED
+; @inv       a route is selected only when its request-line prefix matches at offset 0 of @req_buf
+; @proof     case-analysis: all three serve paths call @close before ret.
+;            routing: strstr result is compared with the buffer base pointer, so
+;            "GET /fractal.wasm HTTP" / "GET / HTTP" must be request-line prefixes;
+;            any other request line falls through to serve_404. QED
 ; ============================================================================
 
 define void @handle_client(i32 %client_fd) !pcf.schema !36 !pcf.toolchain !37 !pcf.pre !7 !pcf.post !8 !pcf.proof !9 !pcf.effects !32 !pcf.bind !33 {
@@ -455,10 +463,18 @@ parse_request:
   %null_pos = getelementptr i8, i8* %req_ptr, i64 %bytes_read
   store i8 0, i8* %null_pos, align 1
 
-  %fractal_str   = getelementptr [18 x i8], [18 x i8]* @req_fractal, i64 0, i64 0
+  ; Route 1: request line must BEGIN with "GET /fractal.wasm HTTP"
+  %fractal_str   = getelementptr [23 x i8], [23 x i8]* @req_fractal_http, i64 0, i64 0
   %fractal_match = call i8* @strstr(i8* %req_ptr, i8* %fractal_str)
-  %is_fractal    = icmp ne i8* %fractal_match, null
-  br i1 %is_fractal, label %serve_wasm, label %serve_html
+  %is_fractal    = icmp eq i8* %fractal_match, %req_ptr
+  br i1 %is_fractal, label %serve_wasm, label %check_index
+
+check_index:
+  ; Route 2: request line must BEGIN with "GET / HTTP"
+  %index_str   = getelementptr [11 x i8], [11 x i8]* @req_index_http, i64 0, i64 0
+  %index_match = call i8* @strstr(i8* %req_ptr, i8* %index_str)
+  %is_index    = icmp eq i8* %index_match, %req_ptr
+  br i1 %is_index, label %serve_html, label %serve_404
 
 serve_wasm:
   %wasm_ptr = getelementptr [266240 x i8], [266240 x i8]* @wasm_resp, i64 0, i64 0
@@ -715,9 +731,10 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
 ; handle_client proof
 !9 = !{!"pcf.proof", !"witness",
        !"strategy: case-analysis
-         case serve_wasm: write(wasm_resp, wasm_resp_len) then close(fd)
-         case serve_html: write(html_resp, html_resp_len) then close(fd)
-         case serve_404:  write(response_404, 99)        then close(fd)
+         routing: strstr(req, needle) == req-base-pointer requires the needle to be a request-line prefix
+         case serve_wasm: prefix 'GET /fractal.wasm HTTP' -> write(wasm_resp, wasm_resp_len) then close(fd)
+         case serve_html: prefix 'GET / HTTP'             -> write(html_resp, html_resp_len) then close(fd)
+         case serve_404:  any other request line          -> write(response_404, 99)         then close(fd)
          all-cases-covered, fd-always-closed
          qed"}
 
@@ -727,12 +744,12 @@ declare void @llvm.memset.p0i8.i64(i8* nocapture writeonly, i8, i64, i1 immarg)
         !"result->ret"}
 
 !32 = !{!"pcf.effects",
-        !"sys.read,libc.strstr,sys.write,sys.close,global.read:@req_fractal,@html_resp,@html_resp_len,@wasm_resp,@wasm_resp_len,@response_404,@response_404_len,global.write:@req_buf"}
+        !"sys.read,libc.strstr,sys.write,sys.close,global.read:@req_fractal_http,@req_index_http,@html_resp,@html_resp_len,@wasm_resp,@wasm_resp_len,@response_404,@response_404_len,global.write:@req_buf"}
 !33 = !{!"pcf.bind",
         !"client_fd->arg:%client_fd"}
 
 !34 = !{!"pcf.effects",
-        !"sys.socket,sys.setsockopt,sys.bind,sys.listen,sys.accept,sys.close,sys.fork,sys.wait,libc.printf,libc.sysconf,global.read:@msg_start,@msg_error_socket,@msg_error_bind,@msg_error_listen"}
+        !"sys.socket,sys.setsockopt,sys.bind,sys.listen,sys.accept,sys.close,sys.fork,sys.wait,libc.htons,libc.printf,libc.sysconf,global.read:@msg_start,@msg_error_socket,@msg_error_bind,@msg_error_listen"}
 !35 = !{!"pcf.bind",
         !"exit_code->ret,sockfd->state:%sockfd"}
 

@@ -29,19 +29,7 @@ jobs:
       - name: Test Server Response
         working-directory: demo/plaintext
         run: |
-          ./alienstack-plaintext > server.log 2>&1 &
-          PID=$!
-          sleep 2
-          RESPONSE=$(curl -s http://127.0.0.1:18081/plaintext)
-          kill $PID
-          echo "Response: $RESPONSE"
-          if [[ "$RESPONSE" == *"Hello, World!"* ]]; then
-            echo "✓ Response matches expected output"
-          else
-            echo "✗ Unexpected response: $RESPONSE"
-            cat server.log
-            exit 1
-          fi
+          bash plaintext-evidence.sh --bin ./alienstack-plaintext --json plaintext-evidence-report.json
 
       - name: Upload Reports
         if: always()
@@ -51,3 +39,5 @@ jobs:
           path: |
             demo/plaintext/verification-report.json
             demo/plaintext/link-gate-report.json
+            demo/plaintext/effect-lint-report.json
+            demo/plaintext/plaintext-evidence-report.json

@@ -16,19 +16,22 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Install Z3
+      - name: Install LLVM and Z3
         run: |
           sudo apt-get update -y
-          sudo apt-get install -y z3
+          sudo apt-get install -y clang z3
 
-      - name: Run Z3 Internal Proof Checks
+      - name: Run Full Storage Pipeline (build + evidence + Z3 + effect lint)
         working-directory: demo/storage
         run: |
-          bash verify-pcf.sh
+          bash build.sh
 
-      - name: Upload Verification Report
+      - name: Upload Verification Reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: storage-verification-report
-          path: demo/storage/pcf-proof-report.json
+          path: |
+            demo/storage/pcf-proof-report.json
+            demo/storage/ips-report.json
+            demo/storage/effect-lint-report.json

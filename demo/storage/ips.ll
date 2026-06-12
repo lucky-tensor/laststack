@@ -354,10 +354,12 @@ declare i64 @strtoll(i8* noundef, i8** noundef, i32 noundef) #1
 ;            exactly two writes occurred: first uncommitted, then committed
 ; @inv       two-phase protocol: if crash occurs between writes, recover will
 ;            reject the uncommitted state (committed=0 fails validation)
+; @inv       epoch never wraps: increment is rejected (ret 1) when the stored
+;            epoch is 2^64-1 (epoch_guard block)
 ; @proof     strategy: two-phase commit — first write sets committed=0 (crash-safe:
 ;            recovery rejects committed!=1); second write sets committed=1 with
-;            valid checksum. Epoch monotonicity: new_epoch = old_epoch + 1 by
-;            construction (add i64 %old_epoch, 1).
+;            valid checksum. Epoch monotonicity: epoch_guard rejects the ceiling
+;            value, so new_epoch = old_epoch + 1 is strictly increasing.
 ; ============================================================================
 ; Function Attrs: noinline nounwind uwtable
 define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 !pcf.schema !100 !pcf.toolchain !101 !pcf.pre !117 !pcf.post !118 !pcf.proof !119 !pcf.effects !120 !pcf.bind !121 {
@@ -410,7 +412,7 @@ define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 !pcf.schema !100
 30:                                               ; preds = %29, %16
   %31 = load i32, i32* %8, align 4
   %32 = icmp ne i32 %31, 0
-  br i1 %32, label %33, label %36
+  br i1 %32, label %33, label %epoch_guard
 
 33:                                               ; preds = %30
   %34 = load i32, i32* %6, align 4
@@ -418,7 +420,21 @@ define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 !pcf.schema !100
   store i32 1, i32* %3, align 4
   br label %74
 
-36:                                               ; preds = %30
+epoch_guard:                                      ; preds = %30
+  ; Reject increments at the epoch ceiling: bvadd would wrap to 0, breaking
+  ; epoch monotonicity (and allowing stale-state acceptance after wrap).
+  %epoch_cur_ptr = getelementptr inbounds %struct.ips_header_t, %struct.ips_header_t* %7, i32 0, i32 2
+  %epoch_cur     = load i64, i64* %epoch_cur_ptr, align 8
+  %epoch_at_max  = icmp eq i64 %epoch_cur, -1
+  br i1 %epoch_at_max, label %epoch_overflow, label %36
+
+epoch_overflow:                                   ; preds = %epoch_guard
+  %fd_eo    = load i32, i32* %6, align 4
+  %close_eo = call i32 @close(i32 noundef %fd_eo)
+  store i32 1, i32* %3, align 4
+  br label %74
+
+36:                                               ; preds = %epoch_guard
   %37 = bitcast %struct.ips_header_t* %9 to i8*
   %38 = bitcast %struct.ips_header_t* %7 to i8*
   call void @llvm.memcpy.p0i8.p0i8.i64(i8* align 8 %37, i8* align 8 %38, i64 32, i1 false)
@@ -477,7 +493,7 @@ define internal i32 @cmd_add(i8* noundef %0, i64 noundef %1) #0 !pcf.schema !100
   store i32 0, i32* %3, align 4
   br label %74
 
-74:                                               ; preds = %67, %66, %53, %33, %15
+74:                                               ; preds = %67, %66, %53, %epoch_overflow, %33, %15
   %75 = load i32, i32* %3, align 4
   ret i32 %75
 }
@@ -945,7 +961,9 @@ attributes #2 = { argmemonly nofree nounwind willreturn }
            (declare-const delta (_ BitVec 64))
            (declare-const committed (_ BitVec 32))
            (assert (=> (= result #x00000000)
-                       (and (= epoch_new (bvadd epoch_old #x0000000000000001))
+                       (and (not (= epoch_old #xffffffffffffffff))
+                            (= epoch_new (bvadd epoch_old #x0000000000000001))
+                            (bvugt epoch_new epoch_old)
                             (= value_new (bvadd value_old delta))
                             (= committed #x00000001))))"}
 !119 = !{!"pcf.proof", !"witness",
@@ -953,7 +971,9 @@ attributes #2 = { argmemonly nofree nounwind willreturn }
            Phase 1: write header with committed=0, new epoch and value
            Phase 2: write header with committed=1, same epoch and value
            If crash between phases, recovery rejects committed!=1.
-           Epoch monotonicity: epoch_new = epoch_old + 1 by add i64 instruction.
+           Epoch monotonicity: epoch_guard rejects epoch_old == 2^64-1 (ret 1),
+           so epoch_new = epoch_old + 1 cannot wrap; strictly increasing.
+           Solver obligation: epoch-z3.smt2 discharges no-wrap under the guard.
            Value correctness: value_new = value_old + delta by add nsw i64."}
 !120 = !{!"pcf.effects", !"libc.open,libc.close,libc.pread,libc.pwrite,libc.fsync,libc.printf"}
 !121 = !{!"pcf.bind", !"path->arg:%0,delta->arg:%1,ret->result"}

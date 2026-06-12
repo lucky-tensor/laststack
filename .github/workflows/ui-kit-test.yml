@@ -3,10 +3,17 @@ name: ui-kit-test
 on:
   push:
     branches:
-      - demo/ui-kit
+      - master
+    paths:
+      - 'demo/ui-kit/**'
+      - '.github/workflows/ui-kit-test.yml'
   pull_request:
     branches:
-      - demo/ui-kit
+      - master
+    paths:
+      - 'demo/ui-kit/**'
+      - '.github/workflows/ui-kit-test.yml'
+  workflow_dispatch:
 
 jobs:
   test:
@@ -30,6 +37,11 @@ jobs:
           cd demo/ui-kit
           bun install
           bunx playwright install --with-deps chromium
+
+      - name: Run Verification Gate
+        run: |
+          chmod +x demo/ui-kit/verify.sh
+          ./demo/ui-kit/verify.sh
 
       - name: Build Wasm
         run: |
