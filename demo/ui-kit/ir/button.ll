@@ -198,11 +198,11 @@ ignore:
 !20 = !{!"pcf.pre", !"smt", !"(assert true)"}
 !21 = !{!"pcf.post", !"smt", !"(assert true)"}
 !22 = !{!"pcf.proof", !"witness", !"strategy: straight-line DOM construction — style root, create button, register click listener, append; stores button handle and initial state (clicked=0) in linear memory"}
-!23 = !{!"pcf.effects", !"dom.create,dom.set_text,dom.set_style,dom.listen,dom.append,global.write:@btn_handle,global.read:@tag_button,@text_submit"}
+!23 = !{!"pcf.effects", !"dom.create,dom.set_text,dom.set_style,dom.listen,dom.append,global.write:@btn_handle,global.read:@tag_button,@text_submit,@attr_backgroundColor,@attr_display,@attr_alignItems,@attr_justifyContent,@attr_minHeight,@attr_margin,@attr_color,@attr_padding,@attr_borderRadius,@attr_border,@attr_cursor,@val_bg_gray,@val_flex,@val_center,@val_100vh,@val_0,@val_bg_blue,@val_white,@val_py_px,@val_rounded,@val_none,@val_pointer"}
 !24 = !{!"pcf.bind", !""}
 
 !30 = !{!"pcf.pre", !"smt", !"(assert true)"}
 !31 = !{!"pcf.post", !"smt", !"(assert true)"}
 !32 = !{!"pcf.proof", !"witness", !"strategy: guarded toggle — non-click events and foreign nodes are ignored; click on the button flips @clicked and rewrites label/background from constants (Submit/#2563eb vs Clicked!/#16a34a)"}
-!33 = !{!"pcf.effects", !"dom.set_text,dom.set_style,global.read:@btn_handle,global.write:@clicked,global.read:@text_submit,@text_clicked"}
+!33 = !{!"pcf.effects", !"dom.set_text,dom.set_style,global.write:@clicked,global.read:@btn_handle,@clicked,@text_submit,@text_clicked,@attr_backgroundColor,@val_bg_blue,@val_bg_green"}
 !34 = !{!"pcf.bind", !"node->arg:%node,event_id->arg:%event_id"}

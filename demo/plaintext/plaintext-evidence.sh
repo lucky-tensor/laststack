@@ -33,8 +33,8 @@ while [ $# -gt 0 ]; do
     esac
 done
 
-if [ ! -x "$BIN" ] && [ ! -f "$BIN" ]; then
-    echo "[plaintext-evidence] ERROR: binary not found: $BIN"
+if [ ! -x "$BIN" ]; then
+    echo "[plaintext-evidence] ERROR: binary missing or not executable: $BIN"
     exit 1
 fi
 
@@ -64,14 +64,17 @@ declare -a results_json
 
 record() {
     local name="$1" ok="$2" detail="$3"
+    local status_word
     checks_total=$((checks_total + 1))
     if [ "$ok" = "true" ]; then
         checks_passed=$((checks_passed + 1))
+        status_word="pass"
         echo "[plaintext-evidence] PASS  $name"
     else
+        status_word="fail"
         echo "[plaintext-evidence] FAIL  $name — $detail"
     fi
-    results_json+=("  {\"check\": \"$name\", \"status\": \"$([ "$ok" = "true" ] && echo pass || echo fail)\", \"detail\": \"$detail\"}")
+    results_json+=("  {\"check\": \"$name\", \"status\": \"$status_word\", \"detail\": \"$detail\"}")
 }
 
 # ---- check 1: correct payload and headers ----------------------------------

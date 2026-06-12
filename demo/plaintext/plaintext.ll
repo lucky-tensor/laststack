@@ -29,6 +29,7 @@ declare i64 @read(i32, i8*, i64)
 declare i64 @write(i32, i8*, i64)
 declare i32 @close(i32)
 declare i32 @htons(i32)
+declare i32 @usleep(i32)
 declare void @llvm.memcpy.p0i8.p0i8.i64(i8*, i8*, i64, i1)
 
 define i64 @respond_plaintext(i32 %client_fd) !pcf.schema !30 !pcf.toolchain !31 !pcf.pre !1 !pcf.post !2 !pcf.proof !3 !pcf.effects !4 !pcf.bind !5 {
@@ -98,7 +99,7 @@ accept_loop:
   ; %fail_count tracks consecutive accept() failures; a healthy accept resets
   ; it to 0. Persistent failure (e.g. EMFILE, dead socket) terminates the
   ; server instead of spinning in a busy-loop.
-  %fail_count = phi i32 [ 0, %announce_port ], [ 0, %handle_client_block ], [ %fail_next, %accept_fail ]
+  %fail_count = phi i32 [ 0, %announce_port ], [ 0, %handle_client_block ], [ %fail_next, %accept_backoff ]
   %client_fd = call i32 @accept(i32 %sockfd, i8* null, i32* null)
   %client_ok = icmp sge i32 %client_fd, 0
   br i1 %client_ok, label %handle_client_block, label %accept_fail
@@ -106,7 +107,13 @@ accept_loop:
 accept_fail:
   %fail_next = add i32 %fail_count, 1
   %give_up = icmp uge i32 %fail_next, 1024
-  br i1 %give_up, label %accept_exhausted, label %accept_loop
+  br i1 %give_up, label %accept_exhausted, label %accept_backoff
+
+accept_backoff:
+  ; 10ms backoff between failed accepts: avoids pegging the CPU on transient
+  ; failures (e.g. EMFILE) while bounding total retry time to ~10s
+  call i32 @usleep(i32 10000)
+  br label %accept_loop
 
 accept_exhausted:
   call i32 @close(i32 %sockfd)
@@ -133,8 +140,8 @@ handle_client_block:
 
 !11 = !{!"pcf.pre", !"smt", !"(assert true)"}
 !12 = !{!"pcf.post", !"smt", !"(assert (or (= exit_code #x00000000) (= exit_code #x00000001)))"}
-!13 = !{!"pcf.proof", !"witness", !"strategy: socket-bind-listen-accept loop; consecutive accept() failures are counted and the server exits 1 (closing the listen socket) after 1024 in a row instead of busy-looping"}
-!14 = !{!"pcf.effects", !"libc.socket,libc.setsockopt,libc.bind,libc.listen,libc.accept,libc.close,libc.htons"}
+!13 = !{!"pcf.proof", !"witness", !"strategy: socket-bind-listen-accept loop; consecutive accept() failures back off 10ms each (usleep) and the server exits 1 (closing the listen socket) after 1024 in a row instead of busy-looping"}
+!14 = !{!"pcf.effects", !"libc.socket,libc.setsockopt,libc.bind,libc.listen,libc.accept,libc.close,libc.htons,libc.usleep"}
 !15 = !{!"pcf.bind", !"ret->exit_code"}
 
 !30 = !{!"pcf.schema", !"alienstack.pcf.v1"}

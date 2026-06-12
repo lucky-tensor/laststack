@@ -72,6 +72,7 @@ effect_atoms() {
         memset)               echo "libc.memset"                    ;;
         exit)                 echo "libc.exit"                      ;;
         nanosleep)            echo "libc.nanosleep sys.nanosleep"   ;;
+        usleep)               echo "libc.usleep sys.usleep"         ;;
         *)                    echo ""                               ;;
     esac
 }
@@ -82,7 +83,7 @@ effect_atoms() {
 # the caller as over-declaration, which is a warning at most).
 
 INTERNAL_FNS="$(grep -E '^define ' "$IR_FILE" \
-    | grep -oE '@[A-Za-z_][A-Za-z0-9_]*\(' \
+    | grep -oE '@[A-Za-z_.$][A-Za-z0-9_.$-]*\(' \
     | sed 's/^@//; s/(//' \
     | tr '\n' ' ')"
 
@@ -107,7 +108,7 @@ run_lint() {
     # Start of a function definition
     /^define / {
         in_fn = 1
-        match($0, /@[A-Za-z_][A-Za-z0-9_]*\(/)
+        match($0, /@[A-Za-z_.$][A-Za-z0-9_.$-]*\(/)
         fn_name = substr($0, RSTART+1, RLENGTH-2)
 
         effects_node = ""
@@ -127,12 +128,17 @@ run_lint() {
         }
     }
 
-    # Collect external call targets inside function body
-    in_fn && /call .* @[a-z]/ {
+    # Collect external call targets inside function body. Only the callee
+    # symbol (an @name immediately followed by an argument list) is taken;
+    # globals referenced in inline getelementptr operands are followed by
+    # "," or ")" and are not matched. The symbol charset covers the common
+    # LLVM identifier characters (letters, digits, _, ., $, -) so internal
+    # names like foo.isra.0 or _start are classified correctly.
+    in_fn && /call .*@/ {
         line = $0
-        while (match(line, /@[a-z][A-Za-z0-9_]*/)) {
-            sym = substr(line, RSTART+1, RLENGTH-1)
-            if (!(sym in internal) && sym != "llvm") {
+        while (match(line, /@[A-Za-z_.$][A-Za-z0-9_.$-]*\(/)) {
+            sym = substr(line, RSTART+1, RLENGTH-2)
+            if (!(sym in internal) && sym !~ /^llvm\./) {
                 if (call_targets == "") {
                     call_targets = sym
                 } else if (index(" " call_targets " ", " " sym " ") == 0) {
@@ -211,12 +217,19 @@ while IFS= read -r line; do
                     continue
                 fi
                 matched=false
+                # Exact token comparison against the comma-separated declared
+                # list — substring matching would let e.g. sys.read match a
+                # declared sys.readv.
+                IFS=',' read -ra _declared_tokens <<< "$declared"
                 for atom in $atoms; do
-                    if echo "$declared" | grep -qF "$atom"; then
-                        matched=true
-                        observed_str="$observed_str $atom"
-                        break
-                    fi
+                    for _tok in "${_declared_tokens[@]}"; do
+                        _tok="${_tok// /}"
+                        if [ "$_tok" = "$atom" ]; then
+                            matched=true
+                            observed_str="$observed_str $atom"
+                            break 2
+                        fi
+                    done
                 done
                 if ! $matched; then
                     fn_errors+=("observed effect '${atoms%% *}' (@$sym) not declared (declared: $declared)")
